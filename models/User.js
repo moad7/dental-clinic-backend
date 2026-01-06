@@ -79,23 +79,29 @@ const UserSchema = new Schema(
 
 UserSchema.pre('save', function (next) {
   if (this.role === 'doctor') {
+    this.secretary = undefined;
     if (!this.doctor || !this.doctor.specialty) {
       return next(new Error('Doctor specialty is required for doctor role.'));
     }
   }
-  next();
-});
 
-UserSchema.pre('save', function (next) {
   if (this.role === 'secretary') {
+    this.doctor = undefined;
     if (!this.secretary || !this.secretary.workShift) {
       return next(
         new Error('Secretary workShift is required for secretary role.')
       );
     }
   }
+
+  if (this.role === 'patient') {
+    this.doctor = undefined;
+    this.secretary = undefined;
+  }
+
   next();
 });
+
 UserSchema.pre('save', async function (next) {
   if (this.isModified('password')) {
     this.password = await bcrypt.hash(this.password, 10);

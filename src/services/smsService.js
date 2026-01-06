@@ -15,7 +15,7 @@ class SmsService {
       const msg = await twilioClient.messages.create({
         body,
         from: FROM,
-        to: '+972503886510',
+        to,
       });
 
       return {

@@ -160,11 +160,12 @@ export const otpByCredentials = async (req, res) => {
       type: 'Sign in',
     });
 
-    await SmsService.sendOTP({
-      to: phoneNumber,
-      code: otpCodeStr,
-      minutesValid: 5,
-    });
+    // await SmsService.sendOTP({
+    //   to: phoneNumber,
+    //   code: otpCodeStr,
+    //   minutesValid: 5,
+    // });
+    console.log(otpCodeStr);
 
     return res.status(200).json({
       message: 'OTP sent successfully',
@@ -172,8 +173,11 @@ export const otpByCredentials = async (req, res) => {
       type: 'Sign in',
     });
   } catch (err) {
-    console.error('otpByCredentials error:', err);
-    return res.status(500).json({ message: 'Server error', err });
+    return res.status(err?.status || 500).json({
+      message: err?.message || 'Server error',
+      code: err?.code,
+      moreInfo: err?.moreInfo,
+    });
   }
 };
 export const findWithOTP = async (req, res) => {
@@ -239,11 +243,12 @@ export const otpByPhone = async (req, res) => {
       type,
     });
 
-    await SmsService.sendOTP({
-      to: phoneNumber,
-      code: otpCodeStr,
-      minutesValid: 5,
-    });
+    // await SmsService.sendOTP({
+    //   to: phoneNumber,
+    //   code: otpCodeStr,
+    //   minutesValid: 5,
+    // });
+    console.log(otpCodeStr);
 
     return res.status(200).json({
       message: 'OTP sent successfully',

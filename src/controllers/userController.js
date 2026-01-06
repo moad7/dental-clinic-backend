@@ -1,8 +1,8 @@
 // src/controllers/userController.js
-import User from "../../models/User.js";
-import Appointment from "../../models/Appointment.js";
-import Treatment from "../../models/Treatment.js";
-import TreatmentSession from "../../models/TreatmentSession.js";
+import User from '../../models/User.js';
+import Appointment from '../../models/Appointment.js';
+import Treatment from '../../models/Treatment.js';
+import TreatmentSession from '../../models/TreatmentSession.js';
 
 // ملاحظة مهمة:
 // عشان populate المتداخل يشتغل مثل include القديم:
@@ -24,13 +24,15 @@ export const getAllPatients = async (req, res) => {
     // إن أردت حصرهم على المرضى فقط:
     // const users = await User.find({ role: "patient" })
     const users = await User.find({})
-      .select("name phoneNumber role createdAt") // id بيكون _id تلقائيًا
+      .select('name phoneNumber role createdAt') // id بيكون _id تلقائيًا
       .sort({ createdAt: -1 })
       .lean();
 
     res.status(200).json(users);
   } catch (err) {
-    res.status(500).json({ message: "Failed to fetch patients", error: err.message });
+    res
+      .status(500)
+      .json({ message: 'Failed to fetch patients', error: err.message });
   }
 };
 
@@ -40,16 +42,18 @@ export const updateUser = async (req, res) => {
     const { name, phoneNumber, role } = req.body;
 
     const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user) return res.status(404).json({ message: 'User not found' });
 
     if (name !== undefined) user.name = name;
     if (phoneNumber !== undefined) user.phoneNumber = phoneNumber;
     if (role !== undefined) user.role = role;
 
     await user.save();
-    res.status(200).json({ message: "User updated successfully" });
+    res.status(200).json({ message: 'User updated successfully' });
   } catch (err) {
-    res.status(500).json({ message: "Failed to update user", error: err.message });
+    res
+      .status(500)
+      .json({ message: 'Failed to update user', error: err.message });
   }
 };
 
@@ -57,13 +61,34 @@ export const updateUser = async (req, res) => {
 export const deleteUser = async (req, res) => {
   try {
     const deleted = await User.findByIdAndDelete(req.params.id);
-    if (!deleted) return res.status(404).json({ message: "User not found" });
+    if (!deleted) return res.status(404).json({ message: 'User not found' });
 
-    res.status(200).json({ message: "User deleted successfully" });
+    res.status(200).json({ message: 'User deleted successfully' });
   } catch (err) {
-    res.status(500).json({ message: "Failed to delete user", error: err.message });
+    res
+      .status(500)
+      .json({ message: 'Failed to delete user', error: err.message });
   }
 };
+
+// export const fixSecretary = async (req, res) => {
+//   try {
+//     await User.updateOne(
+//       { phoneNumber: '0503886510' },
+//       {
+//         $set: {
+//           role: 'secretary',
+//           secretary: { workShift: 'morning' },
+//         },
+//         $unset: { doctor: '' },
+//       }
+//     );
+
+//     res.json({ message: 'User fixed' });
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// };
 
 // GET /api/users/:id (تفاصيل المريض + المواعيد + العلاجات + الجلسات)
 // export const getPatientDetails = async (req, res) => {
