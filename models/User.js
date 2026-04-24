@@ -5,34 +5,70 @@ import bcrypt from 'bcrypt';
 /* ----------------------------------------------
    Doctor Profile
 ------------------------------------------------*/
-const ClinicSchema = new Schema(
-  {
-    name: { type: String, trim: true },
-    address: { type: String, trim: true },
-    phones: [{ type: String, trim: true }],
-    geo: { lat: Number, lng: Number },
-    description: { type: String, trim: true },
-  },
-  { _id: false }
-);
 const DoctorProfileSchema = new Schema(
   {
-    specialty: { type: Schema.Types.ObjectId, ref: 'Service', required: true },
+    services: [
+      {
+        groupId: {
+          type: Schema.Types.ObjectId,
+          ref: 'Service',
+          required: true,
+        },
+        serviceId: {
+          type: Schema.Types.ObjectId,
+          required: true,
+        },
+      },
+    ],
     licenseNumber: { type: String, trim: true },
     yearsOfExperience: { type: Number, min: 0 },
     languages: [{ type: String, trim: true }],
-    clinic: ClinicSchema,
+    clinic: {
+      type: Schema.Types.ObjectId,
+      ref: 'Clinic',
+      required: true,
+    },
     workingHours: [
       {
-        day: { type: String },
-        start: String,
-        end: String,
-        isClosed: Boolean,
+        day: {
+          type: String,
+          enum: [
+            'sunday',
+            'monday',
+            'tuesday',
+            'wednesday',
+            'thursday',
+            'friday',
+            'saturday',
+          ],
+          required: true,
+        },
+
+        isClosed: {
+          type: Boolean,
+          default: false,
+        },
+
+        start: {
+          type: String,
+          required: function () {
+            return !this.isClosed;
+          },
+          match: /^([01]\d|2[0-3]):([0-5]\d)$/,
+        },
+
+        end: {
+          type: String,
+          required: function () {
+            return !this.isClosed;
+          },
+          match: /^([01]\d|2[0-3]):([0-5]\d)$/,
+        },
       },
     ],
     bio: String,
   },
-  { _id: false }
+  { _id: false },
 );
 
 /* ----------------------------------------------
@@ -45,7 +81,7 @@ const SecretaryProfileSchema = new Schema(
     salary: { type: Number, min: 0 },
     notes: { type: String },
   },
-  { _id: false }
+  { _id: false },
 );
 
 /* ----------------------------------------------
@@ -61,20 +97,37 @@ const UserSchema = new Schema(
       lowercase: true,
       trim: true,
     },
-    password: { type: String, required: true },
+    password: { type: String, required: false },
     role: {
       type: String,
       enum: ['doctor', 'secretary', 'patient'],
       required: true,
     },
     phoneNumber: { type: String, required: true },
-
+    gender: { type: String, enum: ['male', 'female'], required: true },
     avatar: { type: String },
-
+    isActive: {
+      type: Boolean,
+      default: false,
+    },
+    mustSetPassword: {
+      type: Boolean,
+      default: true,
+    },
+    activationToken: {
+      type: String,
+    },
+    activationTokenExpires: {
+      type: Date,
+    },
     doctor: { type: DoctorProfileSchema, default: undefined },
     secretary: { type: SecretaryProfileSchema, default: undefined },
   },
-  { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
+  },
 );
 
 UserSchema.pre('save', function (next) {
@@ -89,7 +142,7 @@ UserSchema.pre('save', function (next) {
     this.doctor = undefined;
     if (!this.secretary || !this.secretary.workShift) {
       return next(
-        new Error('Secretary workShift is required for secretary role.')
+        new Error('Secretary workShift is required for secretary role.'),
       );
     }
   }
@@ -103,7 +156,7 @@ UserSchema.pre('save', function (next) {
 });
 
 UserSchema.pre('save', async function (next) {
-  if (this.isModified('password')) {
+  if (this.password && this.isModified('password')) {
     this.password = await bcrypt.hash(this.password, 10);
   }
   next();
