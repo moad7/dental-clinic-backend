@@ -198,19 +198,25 @@ export const findWithOTP = async (req, res) => {
     }
     const user = await User.findOne({
       phoneNumber: otpDoc.phoneNumber,
-    });
+    }).select('-password');
     if (!user) {
       return res.status(400).json({ message: 'User Not Found' });
     }
     // مثال: لو حاب تضيف lastSignIn في السكيمة مستقبلاً
     // user.lastSignIn = new Date();
-    await user.save();
-
-    await OTP.findByIdAndDelete(otpId);
 
     const token = generateToken(user._id, user.role);
+    user.tokens = user.tokens || [];
+    user.tokens.push({ token });
 
-    return res.json({ user, token });
+    // limit = 5
+    if (user.tokens.length > 5) {
+      user.tokens = user.tokens.slice(-5);
+    }
+    await user.save();
+    await OTP.findByIdAndDelete(otpId);
+    const lastToken = user.tokens[user.tokens.length - 1]?.token;
+    return res.json({ user, lastToken });
   } catch (err) {
     console.error('findWithOTP error:', err);
     return res.status(500).json({ message: 'Server error' });

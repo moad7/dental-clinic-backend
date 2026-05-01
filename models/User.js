@@ -20,9 +20,9 @@ const DoctorProfileSchema = new Schema(
         },
       },
     ],
-    licenseNumber: { type: String, trim: true },
+    // licenseNumber: { type: String, trim: true },
     yearsOfExperience: { type: Number, min: 0 },
-    languages: [{ type: String, trim: true }],
+    bio: { type: String, trim: true },
     clinic: {
       type: Schema.Types.ObjectId,
       ref: 'Clinic',
@@ -104,7 +104,11 @@ const UserSchema = new Schema(
       required: true,
     },
     phoneNumber: { type: String, required: true },
-    gender: { type: String, enum: ['male', 'female'], required: true },
+    gender: {
+      type: String,
+      enum: ['male', 'female'],
+      // required: true
+    },
     avatar: { type: String },
     isActive: {
       type: Boolean,
@@ -120,6 +124,12 @@ const UserSchema = new Schema(
     activationTokenExpires: {
       type: Date,
     },
+    tokens: [
+      {
+        token: { type: String, required: true },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
     doctor: { type: DoctorProfileSchema, default: undefined },
     secretary: { type: SecretaryProfileSchema, default: undefined },
   },

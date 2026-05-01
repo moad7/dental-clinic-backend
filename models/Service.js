@@ -5,29 +5,32 @@ const { Schema, model } = mongoose;
 const ServiceItemSchema = new Schema(
   {
     name: { type: String, required: true, trim: true },
+    description: { type: String, trim: true },
     price: { type: Number, min: 0 },
     durationMin: { type: Number, min: 5 },
     active: { type: Boolean, default: true },
     photo: { type: String },
   },
-  { _id: true } 
+  { _id: true },
 );
 
 const ServiceGroupSchema = new Schema(
   {
-    title: { type: String, required: true, trim: true, index: true }, 
+    title: { type: String, required: true, trim: true, index: true },
     services: { type: [ServiceItemSchema], default: [] },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 ServiceGroupSchema.path('services').validate(function (arr) {
   if (!Array.isArray(arr)) return true;
-  const names = arr.map(s => (s.name || '').trim().toLowerCase());
+  const names = arr.map((s) => (s.name || '').trim().toLowerCase());
   return names.length === new Set(names).size;
 }, 'Duplicate service name inside this group');
 
-
-ServiceGroupSchema.index({ 'services.name': 1 }, { unique: true, collation: { locale: 'en', strength: 2 } });
+ServiceGroupSchema.index(
+  { 'services.name': 1 },
+  { unique: true, collation: { locale: 'en', strength: 2 } },
+);
 
 export default model('Service', ServiceGroupSchema);
