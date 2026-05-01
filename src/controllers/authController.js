@@ -1,5 +1,4 @@
 import bcrypt from 'bcrypt';
-import { generateToken } from '../utils/generateToken.js';
 import User from '../../models/User.js';
 import Patient from '../../models/Patient.js';
 import OTP from '../../models/Otp.js';
@@ -58,9 +57,7 @@ export const registerUser = async (req, res) => {
       notes: '',
       avatar: '',
     });
-
-    const token = generateToken(user._id, user.role);
-
+    const token = await user.generateAuthToken();
     res.status(201).json({
       message: 'User registered successfully',
       token,
@@ -104,8 +101,7 @@ export const loginUser = async (req, res) => {
         .status(400)
         .json({ message: 'Invalid phone number or password' });
     }
-
-    const token = generateToken(user._id, user.role);
+    const token = await user.generateAuthToken();
     res.status(200).json({
       message: 'Login successful',
       token,
@@ -204,19 +200,20 @@ export const findWithOTP = async (req, res) => {
     }
     // مثال: لو حاب تضيف lastSignIn في السكيمة مستقبلاً
     // user.lastSignIn = new Date();
-
-    const token = generateToken(user._id, user.role);
-    user.tokens = user.tokens || [];
-    user.tokens.push({ token });
-
-    // limit = 5
-    if (user.tokens.length > 5) {
-      user.tokens = user.tokens.slice(-5);
-    }
     await user.save();
     await OTP.findByIdAndDelete(otpId);
-    const lastToken = user.tokens[user.tokens.length - 1]?.token;
-    return res.json({ user, lastToken });
+
+    // const lastToken = user.tokens[user.tokens.length - 1]?.token;
+
+    return res.json({
+      user: {
+        id: user._id,
+        name: user.name,
+        phoneNumber: user.phoneNumber,
+        role: user.role,
+        tokens: user.tokens[0].token,
+      },
+    });
   } catch (err) {
     console.error('findWithOTP error:', err);
     return res.status(500).json({ message: 'Server error' });

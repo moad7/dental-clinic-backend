@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 const { Schema, model } = mongoose;
 import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 
 /* ----------------------------------------------
    Doctor Profile
@@ -139,6 +140,23 @@ const UserSchema = new Schema(
     toObject: { virtuals: true },
   },
 );
+
+UserSchema.methods.generateAuthToken = async function () {
+  const user = this;
+
+  // Generate a new token
+  const token = jwt.sign({ _id: user._id.toString() }, process.env.JWT_SECRET, {
+    expiresIn: '30d', // Token expiry time
+  });
+
+  // Limit tokens to 6 (FIFO behavior)
+  user.tokens = [...user.tokens, { token }].slice(-6); // Keep the last 6 tokens only
+
+  // Save the user with the updated tokens
+  await user.save();
+
+  return token;
+};
 
 UserSchema.pre('save', function (next) {
   if (this.role === 'doctor') {

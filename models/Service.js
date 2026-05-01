@@ -6,7 +6,7 @@ const ServiceItemSchema = new Schema(
   {
     name: { type: String, required: true, trim: true },
     description: { type: String, trim: true },
-    price: { type: Number, min: 0 },
+    price: { type: Number, min: 0, default: 0 },
     durationMin: { type: Number, min: 5 },
     active: { type: Boolean, default: true },
     photo: { type: String },
@@ -24,13 +24,12 @@ const ServiceGroupSchema = new Schema(
 
 ServiceGroupSchema.path('services').validate(function (arr) {
   if (!Array.isArray(arr)) return true;
-  const names = arr.map((s) => (s.name || '').trim().toLowerCase());
+
+  const names = arr
+    .map((s) => (s.name || '').trim().toLowerCase())
+    .filter(Boolean);
+
   return names.length === new Set(names).size;
 }, 'Duplicate service name inside this group');
-
-ServiceGroupSchema.index(
-  { 'services.name': 1 },
-  { unique: true, collation: { locale: 'en', strength: 2 } },
-);
 
 export default model('Service', ServiceGroupSchema);

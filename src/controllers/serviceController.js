@@ -27,7 +27,7 @@ export const createServiceGroup = async (req, res) => {
   }
 
   try {
-    const isAvailable = await Service.findOne(title);
+    const isAvailable = await Service.findOne({ title: title });
     if (isAvailable)
       return res
         .status(404)
@@ -100,8 +100,7 @@ export const deleteServiceGroup = async (req, res) => {
 // إضافة خدمة جديدة داخل مجموعة معينة
 export const addServiceItem = async (req, res) => {
   const { groupId } = req.params;
-  const { name, subSpecialties, price, durationMin, active, photo } = req.body;
-
+  const { name, description, price, durationMin, active, photo } = req.body;
   if (req.user.role !== 'secretary') {
     return res
       .status(403)
@@ -119,10 +118,10 @@ export const addServiceItem = async (req, res) => {
 
     group.services.push({
       name: name.trim(),
-      subSpecialties: Array.isArray(subSpecialties) ? subSpecialties : [],
-      price: price !== undefined ? Number(price) : undefined,
-      durationMin,
-      active,
+      description,
+      price: price !== undefined ? Number(price) : 0,
+      durationMin: durationMin !== undefined ? Number(durationMin) : undefined,
+      active: active !== undefined ? active : true,
       photo,
     });
 
@@ -138,7 +137,7 @@ export const addServiceItem = async (req, res) => {
 // تعديل خدمة داخل مجموعة
 export const updateServiceItem = async (req, res) => {
   const { groupId, itemId } = req.params;
-  const { name, subSpecialties, price, durationMin, active, photo } = req.body;
+  const { name, description, price, durationMin, active, photo } = req.body;
 
   if (req.user.role !== 'secretary') {
     return res
