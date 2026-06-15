@@ -15,10 +15,6 @@ const DoctorProfileSchema = new Schema(
           ref: 'Service',
           required: true,
         },
-        serviceId: {
-          type: Schema.Types.ObjectId,
-          required: true,
-        },
       },
     ],
     // licenseNumber: { type: String, trim: true },
@@ -67,7 +63,6 @@ const DoctorProfileSchema = new Schema(
         },
       },
     ],
-    bio: String,
   },
   { _id: false },
 );
@@ -157,17 +152,18 @@ UserSchema.methods.generateAuthToken = async function () {
 
   return token;
 };
-
 UserSchema.pre('save', function (next) {
   if (this.role === 'doctor') {
     this.secretary = undefined;
-    if (!this.doctor || !this.doctor.specialty) {
-      return next(new Error('Doctor specialty is required for doctor role.'));
+
+    if (!this.doctor) {
+      this.doctor = {};
     }
   }
 
   if (this.role === 'secretary') {
     this.doctor = undefined;
+
     if (!this.secretary || !this.secretary.workShift) {
       return next(
         new Error('Secretary workShift is required for secretary role.'),

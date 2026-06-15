@@ -12,16 +12,19 @@ import dashboardRoutes from './src/routes/dashboardRoutes.js';
 import userRoutes from './src/routes/userRoutes.js';
 import patientRoutes from './src/routes/patientRoutes.js';
 import patientAdminRoutes from './src/routes/patientAdminRoutes.js';
-
+import secretaryRoutes from './src/routes/secretaryRoutes.js';
+import clinicRoutes from './src/routes/clinicRoutes.js';
 dotenv.config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.use('/api/users', userRoutes);
-app.use('/api/services', serviceRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/clinic', clinicRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/secretary', secretaryRoutes);
+app.use('/api/services', serviceRoutes);
 app.use('/api/sessions', treatmentSessionRoutes);
 app.use('/api/treatment', treatmentRoutes);
 app.use('/api/appointments', appointmentRoutes);

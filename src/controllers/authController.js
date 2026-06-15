@@ -76,68 +76,26 @@ export const registerUser = async (req, res) => {
   }
 };
 
-// POST /api/auth/login
-export const loginUser = async (req, res) => {
-  try {
-    const { phoneNumber, password } = req.body;
-
-    if (!phoneNumber || !password) {
-      return res
-        .status(400)
-        .json({ message: 'phoneNumber and password are required' });
-    }
-
-    const user = await User.findOne({ phoneNumber });
-
-    if (!user) {
-      return res
-        .status(400)
-        .json({ message: 'Invalid phone number or password' });
-    }
-
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res
-        .status(400)
-        .json({ message: 'Invalid phone number or password' });
-    }
-    const token = await user.generateAuthToken();
-    res.status(200).json({
-      message: 'Login successful',
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        phoneNumber: user.phoneNumber,
-        role: user.role,
-      },
-    });
-  } catch (err) {
-    console.error(err);
-
-    res.status(500).json({ message: 'Login failed', error: err.message });
-  }
-};
-
 // /////////////// Generate OTP with cerdentials ///////////////
 export const otpByCredentials = async (req, res) => {
   try {
     const { phoneNumber, password } = req.body;
-
     if (!phoneNumber || !password) {
       return res
         .status(400)
         .json({ message: 'phoneNumber and password are required' });
     }
-
     const user = await User.findOne({ phoneNumber });
-
     if (!user) {
       return res
         .status(400)
         .json({ message: 'Invalid phone number or password' });
     }
-
+    if (!user.isActive) {
+      return res.status(403).json({
+        message: 'User is not activated',
+      });
+    }
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res
@@ -147,9 +105,7 @@ export const otpByCredentials = async (req, res) => {
 
     const otpCode = Math.floor(1000 + Math.random() * 9000);
     const otpCodeStr = otpCode.toString();
-
     const codeHash = await bcrypt.hash(otpCodeStr, 10);
-
     const otpDoc = await OTP.create({
       phoneNumber,
       codeHash,
@@ -204,14 +160,16 @@ export const findWithOTP = async (req, res) => {
     await OTP.findByIdAndDelete(otpId);
 
     // const lastToken = user.tokens[user.tokens.length - 1]?.token;
-
+    const token = await user.generateAuthToken();
     return res.json({
+      message: 'OTP verified successfully',
+      token,
       user: {
         id: user._id,
         name: user.name,
         phoneNumber: user.phoneNumber,
         role: user.role,
-        tokens: user.tokens[0].token,
+        // tokens: user.tokens[0].token,
       },
     });
   } catch (err) {
@@ -374,3 +332,44 @@ export const modifyPassword = async (req, res) => {
 };
 
 export const resendOtpCode = async (req, res) => {};
+
+export const setPassword = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    if (!password) {
+      return res.status(400).json({ message: 'Password is required' });
+    }
+
+    const user = await User.findOne({
+      activationToken: token,
+      activationTokenExpires: { $gt: Date.now() },
+      mustSetPassword: true,
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        message: 'Activation link is invalid or expired',
+      });
+    }
+    console.log('before    ' + password);
+    user.password = password;
+    user.isActive = true;
+    user.mustSetPassword = false;
+    user.activationToken = undefined;
+    user.activationTokenExpires = undefined;
+
+    await user.save();
+    console.log('after    ' + password);
+
+    res.json({
+      message: 'Password set successfully. You can now login.',
+    });
+  } catch (err) {
+    res.status(500).json({
+      message: 'Failed to set password',
+      error: err.message,
+    });
+  }
+};

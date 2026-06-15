@@ -1,27 +1,27 @@
-import jwt from "jsonwebtoken";
-import dotenv from "dotenv";
-import User from "../../models/User.js"; // تأكد من المسار الصحيح
+import jwt from 'jsonwebtoken';
+import dotenv from 'dotenv';
+import User from '../../models/User.js';
 
 dotenv.config();
 
 export const protect = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ message: "No token, authorization denied" });
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ message: 'No token, authorization denied' });
   }
 
-  const token = authHeader.split(" ")[1];
+  const token = authHeader.split(' ')[1];
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const user = await User.findById(decoded.sub || decoded.userId || decoded._id).select(
-      "_id name role phoneNumber"
-    );
+    const user = await User.findById(
+      decoded.sub || decoded.userId || decoded._id,
+    ).select('_id name role phoneNumber');
 
     if (!user) {
-      return res.status(401).json({ message: "User not found or removed" });
+      return res.status(401).json({ message: 'User not found or removed' });
     }
 
     req.user = {
@@ -33,15 +33,27 @@ export const protect = async (req, res, next) => {
 
     next();
   } catch (err) {
-    return res.status(401).json({ message: "Invalid or expired token" });
+    return res.status(401).json({ message: 'Invalid or expired token' });
   }
 };
 
 export const authorize = (...roles) => {
   return (req, res, next) => {
     if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ message: "Access denied: insufficient permissions" });
+      return res
+        .status(403)
+        .json({ message: 'Access denied: insufficient permissions' });
     }
     next();
   };
+};
+
+export const secretaryOnly = (req, res, next) => {
+  if (req.user.role !== 'secretary') {
+    return res.status(403).json({
+      message: 'Only secretary can do this action',
+    });
+  }
+
+  next();
 };
