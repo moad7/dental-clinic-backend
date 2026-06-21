@@ -14,6 +14,8 @@ import patientRoutes from './src/routes/patientRoutes.js';
 import patientAdminRoutes from './src/routes/patientAdminRoutes.js';
 import secretaryRoutes from './src/routes/secretaryRoutes.js';
 import clinicRoutes from './src/routes/clinicRoutes.js';
+import doctorRoutes from './src/routes/doctorRoutes.js';
+
 dotenv.config();
 
 const app = express();
@@ -31,6 +33,8 @@ app.use('/api/appointments', appointmentRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/patients', patientRoutes);
 app.use('/api/admin/patients', patientAdminRoutes);
+app.use('/api/doctor', doctorRoutes);
+
 const PORT = process.env.PORT || 3000;
 
 (async () => {
