@@ -10,49 +10,65 @@ const TreatmentSessionSchema = new Schema(
       required: true,
       index: true,
     },
-    date: { type: Date, required: true, index: true },
-    time: {
+
+    doctorId: {
+      type: Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true,
+    },
+
+    date: {
       type: Date,
       required: true,
+      index: true,
     },
+
+    time: {
+      type: String,
+      required: true,
+      match: /^([01]\d|2[0-3]):([0-5]\d)$/,
+    },
+
     status: {
       type: String,
       enum: ['pending', 'confirmed', 'cancelled', 'completed'],
       default: 'pending',
       index: true,
     },
+
     note: { type: String },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
-// ⚙️ الفهارس (indexes)
-TreatmentSessionSchema.index({ treatmentId: 1, date: 1, time: 1 });
-
-// 🔗 عند حذف العلاج، نحذف جلساته (نفس onDelete: 'CASCADE')
-TreatmentSessionSchema.pre('remove', async function (next) {
-  try {
-    // لا داعي نحذف العلاج نفسه — هذا لو حذفنا العلاج نحذف الجلسات
-    // هنا نقدر نضيف كود لو احتجت cascading manual
-    next();
-  } catch (err) {
-    next(err);
-  }
+TreatmentSessionSchema.index({
+  doctorId: 1,
+  date: 1,
+  time: 1,
+  status: 1,
 });
 
-// (اختياري) دالة للتحقق من التعارض الزمني مع جلسات أخرى لنفس العلاج
+TreatmentSessionSchema.index({
+  treatmentId: 1,
+  date: 1,
+  time: 1,
+});
+
 TreatmentSessionSchema.statics.hasConflict = async function ({
-  treatmentId,
+  doctorId,
   date,
   time,
 }) {
-  if (!treatmentId || !date || !time) return false;
+  if (!doctorId || !date || !time) return false;
+
   const exists = await this.exists({
-    treatmentId,
+    doctorId,
     date,
     time,
     status: { $in: ['pending', 'confirmed'] },
   });
+
   return !!exists;
 };
 
