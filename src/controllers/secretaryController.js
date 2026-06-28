@@ -141,106 +141,107 @@ export const getAllPatientBySecretary = async (req, res) => {
   }
 };
 
-// POST /api/secretary/availableDoctors
-export const getAvailableDoctors = async (req, res) => {
-  try {
-    const { payload } = req.body;
-    const { serviceGroupId, date, time } = payload;
-    if (!serviceGroupId || !date || !time) {
-      return res.status(400).json({
-        message: 'serviceGroupId, date and time are required',
-      });
-    }
+// POST /api/secretary/getDoctorsByService,
 
-    if (!mongoose.Types.ObjectId.isValid(serviceGroupId)) {
-      return res.status(400).json({
-        message: 'Invalid serviceGroupId',
-      });
-    }
+// export const getDoctorsByService = async (req, res) => {
+//   try {
+//     const { payload } = req.body;
+//     const { serviceGroupId, date, time } = payload;
+//     if (!serviceGroupId || !date || !time) {
+//       return res.status(400).json({
+//         message: 'serviceGroupId, date and time are required',
+//       });
+//     }
 
-    if (!isValidTime(time)) {
-      return res.status(400).json({
-        message: 'Invalid time format. Expected HH:mm',
-      });
-    }
+//     if (!mongoose.Types.ObjectId.isValid(serviceGroupId)) {
+//       return res.status(400).json({
+//         message: 'Invalid serviceGroupId',
+//       });
+//     }
 
-    const weekday = getWeekdayName(date);
-    const dateRange = getDateOnlyRange(date);
+//     if (!isValidTime(time)) {
+//       return res.status(400).json({
+//         message: 'Invalid time format. Expected HH:mm',
+//       });
+//     }
 
-    if (!weekday || !dateRange) {
-      return res.status(400).json({
-        message: 'Invalid date',
-      });
-    }
+//     const weekday = getWeekdayName(date);
+//     const dateRange = getDateOnlyRange(date);
 
-    const serviceObjectId = new mongoose.Types.ObjectId(serviceGroupId);
+//     if (!weekday || !dateRange) {
+//       return res.status(400).json({
+//         message: 'Invalid date',
+//       });
+//     }
 
-    const matchedDoctors = await User.find({
-      role: 'doctor',
-      isActive: true,
-      'doctor.services.groupId': serviceObjectId,
-      doctor: {
-        $exists: true,
-      },
-      'doctor.workingHours': {
-        $elemMatch: {
-          day: weekday,
-          isClosed: false,
-          start: { $lte: time },
-          end: { $gte: time },
-        },
-      },
-    })
-      .select('-password -tokens -activationToken -activationTokenExpires')
-      .populate({
-        path: 'doctor.services.groupId',
-        select: 'title services',
-      })
-      .populate({
-        path: 'doctor.clinic',
-        select: 'name address phones',
-      })
-      .lean();
+//     const serviceObjectId = new mongoose.Types.ObjectId(serviceGroupId);
 
-    if (matchedDoctors.length === 0) {
-      return res.status(200).json({
-        count: 0,
-        doctors: [],
-      });
-    }
+//     const matchedDoctors = await User.find({
+//       role: 'doctor',
+//       isActive: true,
+//       'doctor.services.groupId': serviceObjectId,
+//       doctor: {
+//         $exists: true,
+//       },
+//       'doctor.workingHours': {
+//         $elemMatch: {
+//           day: weekday,
+//           isClosed: false,
+//           start: { $lte: time },
+//           end: { $gte: time },
+//         },
+//       },
+//     })
+//       .select('-password -tokens -activationToken -activationTokenExpires')
+//       .populate({
+//         path: 'doctor.services.groupId',
+//         select: 'title services',
+//       })
+//       .populate({
+//         path: 'doctor.clinic',
+//         select: 'name address phones',
+//       })
+//       .lean();
 
-    const doctorIds = matchedDoctors.map((doctor) => doctor._id);
+//     if (matchedDoctors.length === 0) {
+//       return res.status(200).json({
+//         count: 0,
+//         doctors: [],
+//       });
+//     }
 
-    const conflicts = await TreatmentSession.find({
-      doctorId: { $in: doctorIds },
-      status: { $in: CONFLICT_STATUSES },
-      time,
-      date: {
-        $gte: dateRange.start,
-        $lt: dateRange.end,
-      },
-    })
-      .select('doctorId')
-      .lean();
+//     const doctorIds = matchedDoctors.map((doctor) => doctor._id);
 
-    const conflictedDoctorIds = new Set(
-      conflicts.map((session) => session.doctorId.toString()),
-    );
+//     const conflicts = await TreatmentSession.find({
+//       doctorId: { $in: doctorIds },
+//       status: { $in: CONFLICT_STATUSES },
+//       time,
+//       date: {
+//         $gte: dateRange.start,
+//         $lt: dateRange.end,
+//       },
+//     })
+//       .select('doctorId')
+//       .lean();
 
-    const availableDoctors = matchedDoctors.filter(
-      (doctor) => !conflictedDoctorIds.has(doctor._id.toString()),
-    );
+//     const conflictedDoctorIds = new Set(
+//       conflicts.map((session) => session.doctorId.toString()),
+//     );
 
-    return res.status(200).json({
-      count: availableDoctors.length,
-      doctors: availableDoctors,
-    });
-  } catch (error) {
-    console.error('getAvailableDoctors error:', error);
+//     const availableDoctors = matchedDoctors.filter(
+//       (doctor) => !conflictedDoctorIds.has(doctor._id.toString()),
+//     );
 
-    return res.status(500).json({
-      message: 'Failed to get available doctors',
-      error: error.message,
-    });
-  }
-};
+//     return res.status(200).json({
+//       count: availableDoctors.length,
+//       doctors: availableDoctors,
+//     });
+//   } catch (error) {
+//     console.error('getAvailableDoctors error:', error);
+
+//     return res.status(500).json({
+//       message: 'Failed to get available doctors',
+//       error: error.message,
+//     });
+//   }
+// };

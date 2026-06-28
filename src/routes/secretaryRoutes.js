@@ -3,7 +3,6 @@ import { protect, secretaryOnly } from '../middleware/authMiddleware.js';
 import {
   createDoctorBySecretary,
   getAllPatientBySecretary,
-  getAvailableDoctors,
 } from '../controllers/secretaryController.js';
 
 const router = express.Router();
@@ -20,6 +19,5 @@ router.get(
   secretaryOnly,
   getAllPatientBySecretary,
 );
-router.post('/availableDoctors', protect, secretaryOnly, getAvailableDoctors);
 
 export default router;
