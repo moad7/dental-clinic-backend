@@ -36,7 +36,16 @@ const TreatmentSessionSchema = new Schema(
       default: 'pending',
       index: true,
     },
-
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    createdByRole: {
+      type: String,
+      enum: ['secretary', 'doctor', 'patient'],
+      required: true,
+    },
     note: { type: String },
   },
   { timestamps: true },

@@ -10,8 +10,6 @@ import {
 import mongoose from 'mongoose';
 import TreatmentSession from '../../models/TreatmentSession.js';
 
-const CONFLICT_STATUSES = ['pending', 'confirmed'];
-
 export const createDoctorBySecretary = async (req, res) => {
   try {
     const { formData } = req.body;
@@ -99,14 +97,31 @@ export const getAllPatientBySecretary = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    const patientIds = patients.map((p) => p.userId?._id);
+    const patientIds = patients.map((p) => p.userId?._id).filter(Boolean);
 
     const treatments = await Treatment.find({
       userId: { $in: patientIds },
     })
       .populate({
-        path: 'serviceId',
-        select: 'title',
+        path: 'serviceGroupId',
+        select: 'title services',
+      })
+      .populate({
+        path: 'createdBy',
+        select: 'name role phoneNumber',
+      })
+      .populate({
+        path: 'Sessions',
+        populate: [
+          {
+            path: 'doctorId',
+            select: 'name phoneNumber avatar',
+          },
+          {
+            path: 'createdBy',
+            select: 'name role phoneNumber',
+          },
+        ],
       })
       .lean();
 
@@ -132,116 +147,9 @@ export const getAllPatientBySecretary = async (req, res) => {
       patients: result,
     });
   } catch (error) {
-    console.error(error);
-
     return res.status(500).json({
       message: 'Failed to fetch patients',
       error: error.message,
     });
   }
 };
-
-// POST /api/secretary/getDoctorsByService,
-
-// export const getDoctorsByService = async (req, res) => {
-//   try {
-//     const { payload } = req.body;
-//     const { serviceGroupId, date, time } = payload;
-//     if (!serviceGroupId || !date || !time) {
-//       return res.status(400).json({
-//         message: 'serviceGroupId, date and time are required',
-//       });
-//     }
-
-//     if (!mongoose.Types.ObjectId.isValid(serviceGroupId)) {
-//       return res.status(400).json({
-//         message: 'Invalid serviceGroupId',
-//       });
-//     }
-
-//     if (!isValidTime(time)) {
-//       return res.status(400).json({
-//         message: 'Invalid time format. Expected HH:mm',
-//       });
-//     }
-
-//     const weekday = getWeekdayName(date);
-//     const dateRange = getDateOnlyRange(date);
-
-//     if (!weekday || !dateRange) {
-//       return res.status(400).json({
-//         message: 'Invalid date',
-//       });
-//     }
-
-//     const serviceObjectId = new mongoose.Types.ObjectId(serviceGroupId);
-
-//     const matchedDoctors = await User.find({
-//       role: 'doctor',
-//       isActive: true,
-//       'doctor.services.groupId': serviceObjectId,
-//       doctor: {
-//         $exists: true,
-//       },
-//       'doctor.workingHours': {
-//         $elemMatch: {
-//           day: weekday,
-//           isClosed: false,
-//           start: { $lte: time },
-//           end: { $gte: time },
-//         },
-//       },
-//     })
-//       .select('-password -tokens -activationToken -activationTokenExpires')
-//       .populate({
-//         path: 'doctor.services.groupId',
-//         select: 'title services',
-//       })
-//       .populate({
-//         path: 'doctor.clinic',
-//         select: 'name address phones',
-//       })
-//       .lean();
-
-//     if (matchedDoctors.length === 0) {
-//       return res.status(200).json({
-//         count: 0,
-//         doctors: [],
-//       });
-//     }
-
-//     const doctorIds = matchedDoctors.map((doctor) => doctor._id);
-
-//     const conflicts = await TreatmentSession.find({
-//       doctorId: { $in: doctorIds },
-//       status: { $in: CONFLICT_STATUSES },
-//       time,
-//       date: {
-//         $gte: dateRange.start,
-//         $lt: dateRange.end,
-//       },
-//     })
-//       .select('doctorId')
-//       .lean();
-
-//     const conflictedDoctorIds = new Set(
-//       conflicts.map((session) => session.doctorId.toString()),
-//     );
-
-//     const availableDoctors = matchedDoctors.filter(
-//       (doctor) => !conflictedDoctorIds.has(doctor._id.toString()),
-//     );
-
-//     return res.status(200).json({
-//       count: availableDoctors.length,
-//       doctors: availableDoctors,
-//     });
-//   } catch (error) {
-//     console.error('getAvailableDoctors error:', error);
-
-//     return res.status(500).json({
-//       message: 'Failed to get available doctors',
-//       error: error.message,
-//     });
-//   }
-// };

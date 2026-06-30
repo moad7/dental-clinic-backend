@@ -8,6 +8,8 @@ export const WEEK_DAYS = [
   'saturday',
 ];
 
+export const CONFLICT_STATUSES = ['pending', 'confirmed'];
+
 export const isValidTime = (time) => {
   return /^([01]\d|2[0-3]):([0-5]\d)$/.test(time);
 };

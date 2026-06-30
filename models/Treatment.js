@@ -25,8 +25,20 @@ const TreatmentSchema = new Schema(
       default: 'in_progress',
       index: true,
     },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    createdByRole: {
+      type: String,
+      enum: ['secretary', 'doctor', 'patient'],
+      required: true,
+    },
+
     completedAt: { type: Date },
   },
+
   {
     timestamps: true,
     toJSON: { virtuals: true },
