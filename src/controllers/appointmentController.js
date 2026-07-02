@@ -182,8 +182,8 @@ export const createAppointment = async (req, res) => {
   }
 };
 
-// GET /api/secretary/getAllAppointmentsBySecretary
-export const getAllAppointmentsBySecretary = async (req, res) => {
+// GET /api/appointments/
+export const getAllAppointments = async (req, res) => {
   try {
     const appointments = await TreatmentSession.find()
       .populate({
@@ -196,8 +196,7 @@ export const getAllAppointmentsBySecretary = async (req, res) => {
       })
       .populate({
         path: 'treatmentId',
-        select:
-          'userId serviceGroupId serviceItemId totalSessions status createdByRole',
+        select: 'userId serviceGroupId serviceItemId totalSessions status',
         populate: [
           {
             path: 'userId',
@@ -205,16 +204,38 @@ export const getAllAppointmentsBySecretary = async (req, res) => {
           },
           {
             path: 'serviceGroupId',
-            select: 'title',
+            select: 'title services',
           },
         ],
       })
       .sort({ date: -1, time: 1 })
       .lean();
 
+    const normalizedAppointments = appointments.map((appt) => {
+      const treatment = appt.treatmentId;
+      const group = treatment?.serviceGroupId;
+
+      const serviceItem =
+        group?.services?.find(
+          (s) => s._id.toString() === treatment?.serviceItemId?.toString(),
+        ) || null;
+
+      if (group?.services) {
+        delete group.services;
+      }
+
+      return {
+        ...appt,
+        treatmentId: {
+          ...treatment,
+          serviceItemId: serviceItem,
+        },
+      };
+    });
+
     return res.status(200).json({
-      count: appointments.length,
-      appointments,
+      count: normalizedAppointments.length,
+      appointments: normalizedAppointments,
     });
   } catch (error) {
     return res.status(500).json({

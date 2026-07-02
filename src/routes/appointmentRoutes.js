@@ -1,7 +1,7 @@
 import express from 'express';
 import {
   createAppointment,
-  getAllAppointmentsBySecretary,
+  getAllAppointments,
 } from '../controllers/appointmentController.js';
 
 import { protect, authorize } from '../middleware/authMiddleware.js';
@@ -26,12 +26,7 @@ router.post(
 //   authorize('secretary', 'patient'),
 //   deleteAppointment,
 // );
-router.get(
-  '/',
-  protect,
-  authorize('secretary', 'doctor'),
-  getAllAppointmentsBySecretary,
-);
+router.get('/', protect, authorize('secretary', 'doctor'), getAllAppointments);
 // router.get('/mine', protect, authorize('patient'), getMyAppointments);
 // router.get(
 //   '/today',
