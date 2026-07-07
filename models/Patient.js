@@ -8,13 +8,17 @@ const PatientSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    age: { type: Number },
+    birth: { type: Date },
     city: { type: String },
-    gender: { type: String, enum: ['male', 'female'] },
     allergies: { type: String },
     notes: { type: String },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
   },
-  { timestamps: true } //createdAt and updatedAt
+  { timestamps: true }, //createdAt and updatedAt
 );
 
 export default mongoose.model('Patient', PatientSchema);

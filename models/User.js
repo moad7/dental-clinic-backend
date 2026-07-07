@@ -85,6 +85,7 @@ const SecretaryProfileSchema = new Schema(
 ------------------------------------------------*/
 const UserSchema = new Schema(
   {
+    idNumber: { type: String, required: true, trim: true, unique: true },
     name: { type: String, required: true, trim: true },
     email: {
       type: String,

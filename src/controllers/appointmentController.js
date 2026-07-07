@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import Appointment from '../../models/Appointment.js';
-import User from '../../models/User.js'; // لو تحتاج populate للبيانات
+import User from '../../models/User.js';
 import {
   CONFLICT_STATUSES,
   getDateOnlyRange,
