@@ -21,8 +21,7 @@ const TreatmentSchema = new Schema(
 
     status: {
       type: String,
-      enum: ['in_progress', 'completed', 'cancelled', 'rejected', 'confirmed'],
-      default: 'in_progress',
+      enum: ['in_progress', 'completed', 'cancelled', 'rejected'],
       index: true,
     },
     createdBy: {

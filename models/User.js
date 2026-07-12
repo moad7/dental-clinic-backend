@@ -106,6 +106,7 @@ const UserSchema = new Schema(
       enum: ['male', 'female'],
       // required: true
     },
+    birth: { type: Date },
     avatar: { type: String },
     isActive: {
       type: Boolean,

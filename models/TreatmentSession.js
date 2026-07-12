@@ -33,7 +33,6 @@ const TreatmentSessionSchema = new Schema(
     status: {
       type: String,
       enum: ['pending', 'confirmed', 'cancelled', 'completed', 'rejected'],
-      default: 'pending',
       index: true,
     },
     createdBy: {

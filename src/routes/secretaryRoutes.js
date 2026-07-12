@@ -4,7 +4,7 @@ import {
   createDoctorBySecretary,
   createPatientBySecretary,
   getAllPatientBySecretary,
-  getPatientFullDetailsBySecretary,
+  getPatientFullProfileForSecretary,
 } from '../controllers/secretaryController.js';
 
 const router = express.Router();
@@ -31,7 +31,7 @@ router.get(
   '/patients/:patientId/full-details',
   protect,
   secretaryOnly,
-  getPatientFullDetailsBySecretary,
+  getPatientFullProfileForSecretary,
 );
 
 export default router;

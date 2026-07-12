@@ -22,6 +22,7 @@ export const createAppointment = async (req, res) => {
       doctorId,
       serviceGroupId,
       serviceItemId,
+      treatmentStatus,
       requiresMultipleSessions,
       totalSessions,
       session,
@@ -74,7 +75,11 @@ export const createAppointment = async (req, res) => {
         message: 'Patient not found',
       });
     }
-
+    if (!patient.isActive) {
+      return res.status(404).json({
+        message: `The patient is inactive`,
+      });
+    }
     const doctor = await User.findOne({
       _id: doctorId,
       role: 'doctor',
@@ -151,7 +156,7 @@ export const createAppointment = async (req, res) => {
       serviceItemId,
       totalSessions: sessionsCount,
       note,
-      status: 'in_progress',
+      status: treatmentStatus,
       createdBy,
       createdByRole,
     });
@@ -161,7 +166,7 @@ export const createAppointment = async (req, res) => {
       doctorId,
       date: new Date(session.date),
       time: session.time,
-      status: session.status || 'pending',
+      status: session.status,
       note: session.note,
       createdBy,
       createdByRole,
@@ -217,22 +222,28 @@ export const getAllAppointments = async (req, res) => {
 
       const serviceItem =
         group?.services?.find(
-          (s) => s._id.toString() === treatment?.serviceItemId?.toString(),
+          (service) => String(service._id) === String(treatment?.serviceItemId),
         ) || null;
 
-      if (group?.services) {
-        delete group.services;
-      }
+      const normalizedGroup = group
+        ? {
+            _id: group._id,
+            title: group.title,
+          }
+        : null;
 
       return {
         ...appt,
-        treatmentId: {
-          ...treatment,
-          serviceItemId: serviceItem,
-        },
+
+        treatmentId: treatment
+          ? {
+              ...treatment,
+              serviceGroupId: normalizedGroup,
+              serviceItem,
+            }
+          : null,
       };
     });
-
     return res.status(200).json({
       count: normalizedAppointments.length,
       appointments: normalizedAppointments,
