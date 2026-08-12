@@ -3,8 +3,9 @@ import Treatment from '../../models/Treatment.js';
 import User from '../../models/User.js';
 import Service from '../../models/Service.js';
 import TreatmentSession from '../../models/TreatmentSession.js';
+import mongoose from 'mongoose';
+import { getDateOnlyRange, isValidTime } from '../utils/fuctions.js';
 
-// helper: يجيب هوية المستخدم الحالي من الميدلوير
 function currentUserId(req) {
   return req.user?.userId || req.user?._id || req.user?.sub;
 }
@@ -103,7 +104,7 @@ export const createTreatmentSession = async (req, res) => {
     }
 
     // 5. التاريخ
-    const dateRange = getDateOnlyRange(date);
+    const dateRange = date;
 
     if (!dateRange) {
       return res.status(400).json({
@@ -175,9 +176,7 @@ export const createTreatmentSession = async (req, res) => {
 
     return res.status(201).json({
       message: 'Treatment session created successfully',
-
       session: newSession,
-
       treatment: {
         _id: treatment._id,
         totalSessions: treatment.totalSessions,
