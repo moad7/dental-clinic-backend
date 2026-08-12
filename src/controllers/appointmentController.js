@@ -8,6 +8,16 @@ import {
 } from '../utils/fuctions.js';
 import TreatmentSession from '../../models/TreatmentSession.js';
 import Treatment from '../../models/Treatment.js';
+import {
+  AppointmentError,
+  validateSessionStatus,
+  validateTreatmentStatus,
+  getTreatmentStatusFromSingleSession,
+  calculateTreatmentStatusFromSessions,
+  validateDoctorForTreatment,
+  checkDoctorAvailability,
+  validateRequestedTreatmentStatus,
+} from '../helpers/appointmentHelpers.js';
 
 function currentUserId(req) {
   return req.user?._id;
@@ -22,7 +32,6 @@ export const createAppointment = async (req, res) => {
       doctorId,
       serviceGroupId,
       serviceItemId,
-      treatmentStatus,
       requiresMultipleSessions,
       totalSessions,
       session,
@@ -156,7 +165,6 @@ export const createAppointment = async (req, res) => {
       serviceItemId,
       totalSessions: sessionsCount,
       note,
-      status: treatmentStatus,
       createdBy,
       createdByRole,
     });
@@ -256,42 +264,335 @@ export const getAllAppointments = async (req, res) => {
   }
 };
 
-// export const updateAppointment = async (req, res) => {
-//   const { id } = req.params;
-//   const { date, time, note, status } = req.body;
+export const updateAppointment = async (req, res) => {
+  const mongoSession = await mongoose.startSession();
 
-//   try {
-//     const appointment = await req.db.Appointment.findByPk(id);
-//     if (!appointment)
-//       return res.status(404).json({ message: 'Appointment not found' });
+  try {
+    const { appointmentId } = req.params;
 
-//     const isPatient =
-//       req.user.role === 'patient' && req.user.userId === appointment.userId;
-//     const isSecretary = req.user.role === 'secretary';
+    const { doctorId, date, time, sessionStatus, treatmentStatus, note } =
+      req.body;
 
-//     if (!isPatient && !isSecretary) {
-//       return res
-//         .status(403)
-//         .json({ message: 'Unauthorized to update this appointment' });
-//     }
+    /* ----------------------------------------------
+       1. Validate ID
+    ------------------------------------------------*/
+    if (!mongoose.Types.ObjectId.isValid(appointmentId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid appointment id',
+      });
+    }
 
-//     if (date !== undefined) appointment.date = date;
-//     if (time !== undefined) appointment.time = time;
-//     if (note !== undefined) appointment.note = note;
-//     if (status !== undefined) appointment.status = status;
+    /* ----------------------------------------------
+       2. Validate statuses before transaction
+    ------------------------------------------------*/
+    validateSessionStatus(sessionStatus);
+    validateTreatmentStatus(treatmentStatus);
 
-//     await appointment.save();
-//     res
-//       .status(200)
-//       .json({ message: 'Appointment updated successfully', appointment });
-//   } catch (err) {
-//     console.error(err);
+    /*
+      Response values.
+      سيتم تعبئتها داخل transaction.
+    */
+    let updatedSession = null;
+    let updatedTreatment = null;
 
-//     res
-//       .status(500)
-//       .json({ message: 'Failed to update appointment', error: err.message });
-//   }
-// };
+    /* ----------------------------------------------
+       3. Start Transaction
+    ------------------------------------------------*/
+    await mongoSession.withTransaction(async () => {
+      /* ------------------------------------------
+         Get TreatmentSession
+      -------------------------------------------*/
+      const appointment =
+        await TreatmentSession.findById(appointmentId).session(mongoSession);
+
+      if (!appointment) {
+        throw new AppointmentError('Appointment not found', 404);
+      }
+
+      /* ------------------------------------------
+         Get Treatment
+      -------------------------------------------*/
+      const treatment = await Treatment.findById(
+        appointment.treatmentId,
+      ).session(mongoSession);
+
+      if (!treatment) {
+        throw new AppointmentError('Treatment not found', 404);
+      }
+
+      /* ------------------------------------------
+         4. pending / confirmed require schedule
+      -------------------------------------------*/
+      const requiresSchedule =
+        sessionStatus === 'pending' || sessionStatus === 'confirmed';
+
+      let dateRange = null;
+
+      if (requiresSchedule) {
+        /*
+          المستخدم يجب أن يرسل الثلاثة بوضوح
+          عند pending / confirmed.
+        */
+        if (!doctorId || !date || !time) {
+          throw new AppointmentError(
+            'Doctor, date and time are required for pending or confirmed sessions',
+            400,
+          );
+        }
+
+        if (!isValidTime(time)) {
+          throw new AppointmentError(
+            'Invalid time format. Expected HH:mm',
+            400,
+          );
+        }
+
+        dateRange = getDateOnlyRange(date);
+
+        if (!dateRange) {
+          throw new AppointmentError('Invalid appointment date', 400);
+        }
+
+        /* ----------------------------------------
+           Doctor:
+           - active
+           - same service
+           - working this day
+           - time inside working hours
+        -----------------------------------------*/
+        await validateDoctorForTreatment({
+          doctorId,
+          treatment,
+          date,
+          time,
+          mongoSession,
+          requireActive: true,
+          checkWorkingHours: true,
+        });
+
+        /* ----------------------------------------
+           Conflict check
+        -----------------------------------------*/
+        await checkDoctorAvailability({
+          doctorId,
+          dateRange,
+          time,
+          sessionId: appointment._id,
+          mongoSession,
+        });
+      }
+
+      /* ------------------------------------------
+         5. For terminal statuses:
+
+         completed
+         cancelled
+         rejected
+
+         date/time/doctorId are NOT required.
+
+         If not provided -> keep old values.
+      -------------------------------------------*/
+
+      /*
+        إذا تم إرسال doctorId في حالة منتهية وكان
+        مختلفًا عن الطبيب الحالي، نتحقق على الأقل
+        من أن الطبيب يقدم نفس الخدمة.
+
+        لا نفحص availability لأن الموعد لم يعد active.
+      */
+      if (
+        !requiresSchedule &&
+        doctorId &&
+        String(doctorId) !== String(appointment.doctorId)
+      ) {
+        await validateDoctorForTreatment({
+          doctorId,
+          treatment,
+          date: date || null,
+          time: time || null,
+          mongoSession,
+          requireActive: false,
+          checkWorkingHours: false,
+        });
+      }
+
+      /* ------------------------------------------
+         Validate optional date/time
+      -------------------------------------------*/
+      let optionalDateRange = null;
+
+      if (!requiresSchedule && date) {
+        optionalDateRange = getDateOnlyRange(date);
+
+        if (!optionalDateRange) {
+          throw new AppointmentError('Invalid appointment date', 400);
+        }
+      }
+
+      if (!requiresSchedule && time) {
+        if (!isValidTime(time)) {
+          throw new AppointmentError(
+            'Invalid time format. Expected HH:mm',
+            400,
+          );
+        }
+      }
+
+      /* ------------------------------------------
+         6. Update TreatmentSession
+      -------------------------------------------*/
+      appointment.status = sessionStatus;
+
+      if (typeof note === 'string') {
+        appointment.note = note.trim();
+      }
+
+      /*
+        مهم:
+
+        لا نستخدم:
+        appointment.date = null
+        appointment.time = null
+        appointment.doctorId = null
+
+        في cancelled/rejected/completed.
+      */
+
+      if (doctorId) {
+        appointment.doctorId = doctorId;
+      }
+
+      if (requiresSchedule && dateRange) {
+        appointment.date = dateRange.start;
+      } else if (optionalDateRange) {
+        appointment.date = optionalDateRange.start;
+      }
+
+      if (time) {
+        appointment.time = time;
+      }
+
+      /* ------------------------------------------
+         Save Session first INSIDE transaction
+
+         هذا مهم لأن حساب Treatment.status يجب أن
+         يرى الحالة الجديدة للجلسة.
+      -------------------------------------------*/
+      await appointment.save({
+        session: mongoSession,
+      });
+
+      /* ------------------------------------------
+         7. Calculate Treatment.status
+      -------------------------------------------*/
+      let calculatedTreatmentStatus;
+
+      /*
+        ------------------------------
+        Single Session Treatment
+        ------------------------------
+      */
+      if (treatment.totalSessions === 1) {
+        calculatedTreatmentStatus =
+          getTreatmentStatusFromSingleSession(sessionStatus);
+      } else {
+        /*
+          ------------------------------
+          Multiple Sessions Treatment
+          ------------------------------
+        */
+        const allSessions = await TreatmentSession.find({
+          treatmentId: treatment._id,
+        })
+          .select('_id status')
+          .session(mongoSession)
+          .lean();
+
+        calculatedTreatmentStatus = calculateTreatmentStatusFromSessions({
+          sessions: allSessions,
+          totalSessions: treatment.totalSessions,
+        });
+      }
+
+      /* ------------------------------------------
+         8. treatmentStatus sent from frontend?
+
+         Validate only.
+         Frontend is not source of truth.
+      -------------------------------------------*/
+      validateRequestedTreatmentStatus({
+        requestedStatus: treatmentStatus,
+        calculatedStatus: calculatedTreatmentStatus,
+      });
+
+      /* ------------------------------------------
+         9. Update Treatment
+      -------------------------------------------*/
+      const oldTreatmentStatus = treatment.status;
+
+      treatment.status = calculatedTreatmentStatus;
+
+      /* ------------------------------------------
+         completedAt
+      -------------------------------------------*/
+      if (calculatedTreatmentStatus === 'completed') {
+        /*
+          لا نغير completedAt كل مرة لو هو
+          مكتمل أصلًا.
+        */
+        if (oldTreatmentStatus !== 'completed' || !treatment.completedAt) {
+          treatment.completedAt = new Date();
+        }
+      } else {
+        /*
+          إذا رجع العلاج من completed إلى
+          أي حالة أخرى.
+        */
+        treatment.completedAt = null;
+      }
+
+      await treatment.save({
+        session: mongoSession,
+      });
+
+      /* ------------------------------------------
+         Store transaction results
+      -------------------------------------------*/
+      updatedSession = appointment.toObject();
+
+      updatedTreatment = treatment.toObject();
+    });
+
+    /* ----------------------------------------------
+       10. Success
+    ------------------------------------------------*/
+    return res.status(200).json({
+      success: true,
+      message: 'Appointment updated successfully',
+      session: updatedSession,
+      treatment: updatedTreatment,
+    });
+  } catch (error) {
+    console.error('updateAppointment error:', error);
+
+    if (error instanceof AppointmentError) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update appointment',
+      error: error.message,
+    });
+  } finally {
+    await mongoSession.endSession();
+  }
+};
 
 // PUT /api/appointments/:id
 // export const updateAppointment = async (req, res) => {
