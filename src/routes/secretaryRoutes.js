@@ -5,6 +5,7 @@ import {
   createPatientBySecretary,
   getAllPatientBySecretary,
   getPatientFullProfileForSecretary,
+  updateDoctorBySecretary,
 } from '../controllers/secretaryController.js';
 
 const router = express.Router();
@@ -15,6 +16,14 @@ router.post(
   secretaryOnly,
   createDoctorBySecretary,
 );
+
+router.put(
+  '/updateDoctorBySecretary/:doctorId',
+  protect,
+  secretaryOnly,
+  updateDoctorBySecretary,
+);
+
 router.get(
   '/getAllPatientBySecretary',
   protect,

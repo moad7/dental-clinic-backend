@@ -594,6 +594,326 @@ export const updateAppointment = async (req, res) => {
   }
 };
 
+const calculateTreatmentStatus = ({ sessions, totalSessions }) => {
+  if (totalSessions === 1) {
+    const status = sessions[0]?.status;
+
+    switch (status) {
+      case 'completed':
+        return 'completed';
+
+      case 'cancelled':
+        return 'cancelled';
+
+      case 'rejected':
+        return 'rejected';
+
+      case 'pending':
+      case 'confirmed':
+      default:
+        return 'in_progress';
+    }
+  }
+
+  if (!sessions.length) {
+    return 'in_progress';
+  }
+
+  const statuses = sessions.map((session) => session.status);
+
+  const hasAllSessions = sessions.length >= totalSessions;
+
+  if (hasAllSessions && statuses.every((status) => status === 'completed')) {
+    return 'completed';
+  }
+
+  if (hasAllSessions && statuses.every((status) => status === 'cancelled')) {
+    return 'cancelled';
+  }
+
+  if (hasAllSessions && statuses.every((status) => status === 'rejected')) {
+    return 'rejected';
+  }
+
+  return 'in_progress';
+};
+
+export const secretaryAppointmentDecision = async (req, res) => {
+  const mongoSession = await mongoose.startSession();
+
+  try {
+    const { appointmentId } = req.params;
+    const { decision } = req.body;
+
+    /* ------------------------------------------
+       Validate appointment id
+    -------------------------------------------*/
+    if (!mongoose.Types.ObjectId.isValid(appointmentId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid appointment id',
+      });
+    }
+
+    /* ------------------------------------------
+       Validate decision
+    -------------------------------------------*/
+    const allowedDecisions = ['approve', 'reject'];
+
+    if (!decision || !allowedDecisions.includes(decision)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Decision must be approve or reject',
+      });
+    }
+
+    let updatedSession;
+    let updatedTreatment;
+
+    await mongoSession.withTransaction(async () => {
+      /* --------------------------------------
+           Find TreatmentSession
+        ---------------------------------------*/
+      const appointment =
+        await TreatmentSession.findById(appointmentId).session(mongoSession);
+
+      if (!appointment) {
+        const error = new Error('Appointment not found');
+
+        error.statusCode = 404;
+        throw error;
+      }
+
+      /* --------------------------------------
+           Only pending can be approved/rejected
+        ---------------------------------------*/
+      if (appointment.status !== 'pending') {
+        const error = new Error(
+          `Appointment cannot be processed because its current status is "${appointment.status}"`,
+        );
+
+        error.statusCode = 400;
+        throw error;
+      }
+
+      /* --------------------------------------
+           Find Treatment
+        ---------------------------------------*/
+      const treatment = await Treatment.findById(
+        appointment.treatmentId,
+      ).session(mongoSession);
+
+      if (!treatment) {
+        const error = new Error('Treatment not found');
+
+        error.statusCode = 404;
+        throw error;
+      }
+
+      /* ======================================
+           APPROVE
+        =======================================*/
+      if (decision === 'approve') {
+        appointment.status = 'confirmed';
+        const doctor = await User.findOne({
+          _id: appointment.doctorId,
+          role: 'doctor',
+          isActive: true,
+          'doctor.services.groupId': treatment.serviceGroupId,
+        })
+          .select('_id')
+          .session(mongoSession);
+
+        if (!doctor) {
+          const error = new Error(
+            'Doctor is unavailable or does not provide this treatment service',
+          );
+
+          error.statusCode = 400;
+          throw error;
+        }
+
+        const conflict = await TreatmentSession.findOne({
+          _id: {
+            $ne: appointment._id,
+          },
+          doctorId: appointment.doctorId,
+          date: appointment.date,
+          time: appointment.time,
+          status: {
+            $in: ['pending', 'confirmed'],
+          },
+        })
+          .select('_id')
+          .session(mongoSession);
+
+        if (conflict) {
+          const error = new Error(
+            'Doctor already has another appointment at this date and time',
+          );
+
+          error.statusCode = 409;
+          throw error;
+        }
+      }
+
+      /* ======================================
+           REJECT
+        =======================================*/
+      if (decision === 'reject') {
+        appointment.status = 'rejected';
+      }
+
+      await appointment.save({
+        session: mongoSession,
+      });
+
+      /* --------------------------------------
+           Recalculate Treatment.status
+        ---------------------------------------*/
+      const allSessions = await TreatmentSession.find({
+        treatmentId: treatment._id,
+      })
+        .select('_id status')
+        .session(mongoSession)
+        .lean();
+
+      const treatmentStatus = calculateTreatmentStatus({
+        sessions: allSessions,
+        totalSessions: treatment.totalSessions,
+      });
+
+      treatment.status = treatmentStatus;
+
+      if (treatmentStatus === 'completed') {
+        if (!treatment.completedAt) {
+          treatment.completedAt = new Date();
+        }
+      } else {
+        treatment.completedAt = null;
+      }
+
+      await treatment.save({
+        session: mongoSession,
+      });
+    });
+
+    return res.status(200).json({
+      success: true,
+
+      message:
+        decision === 'approve'
+          ? 'Appointment approved successfully'
+          : 'Appointment rejected successfully',
+    });
+  } catch (error) {
+    console.error('secretaryAppointmentDecision error:', error);
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || 'Failed to process appointment',
+    });
+  } finally {
+    await mongoSession.endSession();
+  }
+};
+
+export const getTodayAppointments = async (req, res) => {
+  try {
+    const now = new Date();
+
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const endOfToday = new Date(now);
+    endOfToday.setHours(23, 59, 59, 999);
+
+    const sessions = await TreatmentSession.find({
+      date: {
+        $gte: startOfToday,
+        $lte: endOfToday,
+      },
+      /////
+      status: {
+        $in: ['pending', 'confirmed', 'completed'],
+      },
+    })
+      .populate({
+        path: 'doctorId',
+        select: 'name',
+      })
+      .populate({
+        path: 'treatmentId',
+        select: 'userId serviceGroupId serviceItemId status totalSessions',
+        populate: [
+          {
+            path: 'userId',
+            select: 'name phoneNumber',
+          },
+          {
+            path: 'serviceGroupId',
+            select: 'title services',
+          },
+        ],
+      })
+      .sort({
+        time: 1,
+      })
+      .lean();
+
+    const appointments = sessions.map((session) => {
+      const treatment = session.treatmentId;
+      const patient = treatment?.userId;
+      const doctor = session.doctorId;
+      const serviceGroup = treatment?.serviceGroupId;
+      const serviceItem =
+        serviceGroup?.services?.find(
+          (service) => String(service._id) === String(treatment?.serviceItemId),
+        ) || null;
+
+      return {
+        _id: session._id,
+        time: session.time,
+        patient: {
+          _id: patient?._id || null,
+          name: patient?.name || '-',
+          phoneNumber: patient?.phoneNumber || '',
+        },
+
+        doctor: {
+          _id: doctor?._id || null,
+          name: doctor?.name || '-',
+        },
+
+        service: {
+          groupId: serviceGroup?._id || null,
+          groupTitle: serviceGroup?.title || '-',
+          itemId: treatment?.serviceItemId || null,
+          name: serviceItem?.name || '-',
+        },
+        sessionStatus: session.status,
+        treatmentStatus: treatment?.status || null,
+
+        date: session.date,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      date: startOfToday,
+      count: appointments.length,
+      appointments,
+    });
+  } catch (error) {
+    console.error('getTodayAppointments error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch today appointments',
+      error: error.message,
+    });
+  }
+};
+
 // PUT /api/appointments/:id
 // export const updateAppointment = async (req, res) => {
 //   try {

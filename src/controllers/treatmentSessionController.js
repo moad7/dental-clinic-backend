@@ -1,34 +1,41 @@
 // src/controllers/treatmentSessionController.js
-import TreatmentSession from "../../models/TreatmentSession.js";
+import TreatmentSession from '../../models/TreatmentSession.js';
 
-// helper: نطبع تاريخ اليوم عند منتصف الليل (UTC) لتطابق تخزينك
 function normalizeDateOnly(input) {
   const d = new Date(input);
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  return new Date(
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
+  );
 }
 
 // POST /api/sessions
 export const createSession = async (req, res) => {
   const { treatmentId, date, time, note } = req.body;
 
-  if (req.user.role !== "doctor" && req.user.role !== "secretary") {
-    return res.status(403).json({ message: "Only doctors or secretaries can create sessions" });
+  if (req.user.role !== 'doctor' && req.user.role !== 'secretary') {
+    return res
+      .status(403)
+      .json({ message: 'Only doctors or secretaries can create sessions' });
   }
   if (!treatmentId || !date || !time) {
-    return res.status(400).json({ message: "treatmentId, date and time are required" });
+    return res
+      .status(400)
+      .json({ message: 'treatmentId, date and time are required' });
   }
 
   try {
     const session = await TreatmentSession.create({
       treatmentId,
       date: normalizeDateOnly(date),
-      time,                 // schema يتحقق من صيغة HH:mm أو HH:mm:ss
+      time,
       note,
     });
 
-    res.status(201).json({ message: "Session created successfully", session });
+    res.status(201).json({ message: 'Session created successfully', session });
   } catch (err) {
-    res.status(500).json({ message: "Failed to create session", error: err.message });
+    res
+      .status(500)
+      .json({ message: 'Failed to create session', error: err.message });
   }
 };
 
@@ -37,13 +44,15 @@ export const updateSession = async (req, res) => {
   const { id } = req.params;
   const { date, time, status, note } = req.body;
 
-  if (req.user.role !== "doctor" && req.user.role !== "secretary") {
-    return res.status(403).json({ message: "Only doctors or secretaries can update sessions" });
+  if (req.user.role !== 'doctor' && req.user.role !== 'secretary') {
+    return res
+      .status(403)
+      .json({ message: 'Only doctors or secretaries can update sessions' });
   }
 
   try {
     const session = await TreatmentSession.findById(id);
-    if (!session) return res.status(404).json({ message: "Session not found" });
+    if (!session) return res.status(404).json({ message: 'Session not found' });
 
     if (date !== undefined) session.date = normalizeDateOnly(date);
     if (time !== undefined) session.time = time;
@@ -51,9 +60,11 @@ export const updateSession = async (req, res) => {
     if (note !== undefined) session.note = note;
 
     await session.save();
-    res.status(200).json({ message: "Session updated successfully", session });
+    res.status(200).json({ message: 'Session updated successfully', session });
   } catch (err) {
-    res.status(500).json({ message: "Failed to update session", error: err.message });
+    res
+      .status(500)
+      .json({ message: 'Failed to update session', error: err.message });
   }
 };
 
@@ -61,17 +72,21 @@ export const updateSession = async (req, res) => {
 export const deleteSession = async (req, res) => {
   const { id } = req.params;
 
-  if (req.user.role !== "doctor" && req.user.role !== "secretary") {
-    return res.status(403).json({ message: "Only doctors or secretaries can delete sessions" });
+  if (req.user.role !== 'doctor' && req.user.role !== 'secretary') {
+    return res
+      .status(403)
+      .json({ message: 'Only doctors or secretaries can delete sessions' });
   }
 
   try {
     const session = await TreatmentSession.findByIdAndDelete(id);
-    if (!session) return res.status(404).json({ message: "Session not found" });
+    if (!session) return res.status(404).json({ message: 'Session not found' });
 
-    res.status(200).json({ message: "Session deleted successfully" });
+    res.status(200).json({ message: 'Session deleted successfully' });
   } catch (err) {
-    res.status(500).json({ message: "Failed to delete session", error: err.message });
+    res
+      .status(500)
+      .json({ message: 'Failed to delete session', error: err.message });
   }
 };
 
@@ -86,6 +101,8 @@ export const getSessionsByTreatment = async (req, res) => {
 
     res.status(200).json(sessions);
   } catch (err) {
-    res.status(500).json({ message: "Failed to fetch sessions", error: err.message });
+    res
+      .status(500)
+      .json({ message: 'Failed to fetch sessions', error: err.message });
   }
 };

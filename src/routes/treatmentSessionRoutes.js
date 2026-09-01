@@ -6,7 +6,7 @@ import {
   getSessionsByTreatment,
 } from '../controllers/treatmentSessionController.js';
 
-import { protect } from '../middleware/authMiddleware.js';
+import { protect, secretaryOnly } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
