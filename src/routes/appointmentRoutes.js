@@ -5,6 +5,7 @@ import {
   secretaryAppointmentDecision,
   updateAppointment,
   getTodayAppointments,
+  getPatientAppointmentsCalendar,
 } from '../controllers/appointmentController.js';
 
 import { protect, authorize } from '../middleware/authMiddleware.js';
@@ -16,6 +17,12 @@ router.post(
   protect,
   authorize('secretary', 'patient'),
   createAppointment,
+);
+router.get(
+  '/patient/calendar',
+  protect,
+  authorize('patient'),
+  getPatientAppointmentsCalendar,
 );
 router.patch('/updateAppointment/:appointmentId', protect, updateAppointment);
 router.get('/', protect, authorize('secretary', 'doctor'), getAllAppointments);

@@ -17,6 +17,13 @@ import {
   validateDoctorForTreatment,
   checkDoctorAvailability,
   validateRequestedTreatmentStatus,
+  isValidDateOnly,
+  isRangeTooLarge,
+  PATIENT_CALENDAR_SESSION_STATUSES,
+  normalizePatientCalendarSession,
+  getCurrentDateAndTime,
+  compareSessionDateTime,
+  getCalendarHours,
 } from '../helpers/appointmentHelpers.js';
 
 function currentUserId(req) {
@@ -909,6 +916,275 @@ export const getTodayAppointments = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch today appointments',
+      error: error.message,
+    });
+  }
+};
+
+// GET /api/appointments/patient/calendar
+export const getPatientAppointmentsCalendar = async (req, res) => {
+  try {
+    const patientId = req.user.userId;
+
+    const { from, to, status, doctorId, serviceGroupId } = req.query;
+
+    /* ----------------------------------------------
+       1. Validate authenticated patient
+    ------------------------------------------------*/
+    if (!patientId || !mongoose.Types.ObjectId.isValid(patientId)) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid authenticated user',
+      });
+    }
+    /* ----------------------------------------------
+       2. Validate range
+    ------------------------------------------------*/
+    if (!from || !to) {
+      return res.status(400).json({
+        success: false,
+        message: 'from and to are required',
+      });
+    }
+
+    if (!isValidDateOnly(from) || !isValidDateOnly(to)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid date format. Expected YYYY-MM-DD',
+      });
+    }
+
+    if (from > to) {
+      return res.status(400).json({
+        success: false,
+        message: 'from date must be before or equal to to date',
+      });
+    }
+
+    if (isRangeTooLarge(from, to)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Calendar range cannot exceed 6 months',
+      });
+    }
+
+    const fromRange = getDateOnlyRange(from);
+    const toRange = getDateOnlyRange(to);
+
+    if (!fromRange || !toRange) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid calendar date range',
+      });
+    }
+
+    /* ----------------------------------------------
+       3. Validate optional filters
+    ------------------------------------------------*/
+    if (status && !PATIENT_CALENDAR_SESSION_STATUSES.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid session status',
+      });
+    }
+
+    if (doctorId && !mongoose.Types.ObjectId.isValid(doctorId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid doctorId',
+      });
+    }
+
+    if (serviceGroupId && !mongoose.Types.ObjectId.isValid(serviceGroupId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid serviceGroupId',
+      });
+    }
+
+    /* ----------------------------------------------
+       4. Find patient's Treatments
+    ------------------------------------------------*/
+    const treatmentFilter = {
+      userId: patientId,
+    };
+
+    if (serviceGroupId) {
+      treatmentFilter.serviceGroupId = serviceGroupId;
+    }
+
+    const treatments = await Treatment.find(treatmentFilter)
+      .select('_id userId serviceGroupId serviceItemId status note')
+      .lean();
+
+    const treatmentIds = treatments.map((treatment) => treatment._id);
+
+    /*
+      Empty state وليس 404.
+    */
+    if (!treatmentIds.length) {
+      return res.status(200).json({
+        success: true,
+        range: {
+          from,
+          to,
+        },
+        calendar: {
+          earliestTime: '08:00',
+          latestTime: '16:00',
+        },
+        appointments: [],
+        upcomingAppointments: [],
+        previousAppointments: [],
+      });
+    }
+    /* ----------------------------------------------
+       5. Session base query
+    ------------------------------------------------*/
+    const sessionBaseFilter = {
+      treatmentId: {
+        $in: treatmentIds,
+      },
+    };
+    if (status) {
+      sessionBaseFilter.status = status;
+    }
+    if (doctorId) {
+      sessionBaseFilter.doctorId = doctorId;
+    }
+
+    /* ----------------------------------------------
+       6. Calendar appointments inside selected range
+    ------------------------------------------------*/
+    const calendarFilter = {
+      ...sessionBaseFilter,
+      date: {
+        $gte: fromRange.start,
+        $lt: toRange.end,
+      },
+    };
+
+    const calendarSessions = await TreatmentSession.find(calendarFilter)
+      .populate({
+        path: 'doctorId',
+        select: 'name avatar doctor.workingHours doctor.clinic',
+        populate: {
+          path: 'doctor.clinic',
+          select: 'name address',
+        },
+      })
+      .populate({
+        path: 'treatmentId',
+        select: 'serviceGroupId serviceItemId status note',
+        populate: {
+          path: 'serviceGroupId',
+          select: 'title services',
+        },
+      })
+      .sort({
+        date: 1,
+        time: 1,
+      })
+      .lean();
+
+    const previewSessions = await TreatmentSession.find(sessionBaseFilter)
+      .populate({
+        path: 'doctorId',
+        select: 'name avatar doctor.workingHours doctor.clinic',
+        populate: {
+          path: 'doctor.clinic',
+          select: 'name address',
+        },
+      })
+      .populate({
+        path: 'treatmentId',
+        select: 'serviceGroupId serviceItemId status note',
+        populate: {
+          path: 'serviceGroupId',
+          select: 'title services',
+        },
+      })
+      .sort({
+        date: 1,
+        time: 1,
+      })
+      .lean();
+
+    /* ----------------------------------------------
+       8. Normalize
+    ------------------------------------------------*/
+    const normalizedCalendar = calendarSessions.map(
+      normalizePatientCalendarSession,
+    );
+
+    const normalizedPreview = previewSessions.map(
+      normalizePatientCalendarSession,
+    );
+
+    /* ----------------------------------------------
+       9. previous / upcoming
+    ------------------------------------------------*/
+    const { date: nowDate, time: nowTime } = getCurrentDateAndTime();
+
+    const previousAppointments = normalizedPreview
+      .filter((appointment) => {
+        return compareSessionDateTime(appointment, nowDate, nowTime) < 0;
+      })
+      .sort((a, b) => {
+        const aValue = `${a.date} ${a.startTime}`;
+        const bValue = `${b.date} ${b.startTime}`;
+
+        return bValue.localeCompare(aValue);
+      })
+      .slice(0, 5);
+
+    const upcomingAppointments = normalizedPreview
+      .filter((appointment) => {
+        if (!['pending', 'confirmed'].includes(appointment.sessionStatus)) {
+          return false;
+        }
+        return compareSessionDateTime(appointment, nowDate, nowTime) >= 0;
+      })
+      .sort((a, b) => {
+        const aValue = `${a.date} ${a.startTime}`;
+        const bValue = `${b.date} ${b.startTime}`;
+
+        return aValue.localeCompare(bValue);
+      })
+      .slice(0, 5);
+
+    /* ----------------------------------------------
+       10. Dynamic calendar hours
+    ------------------------------------------------*/
+    const calendar = getCalendarHours(normalizedCalendar);
+
+    /* ----------------------------------------------
+       11. Remove internal metadata
+    ------------------------------------------------*/
+    const removeInternalFields = (appointment) => {
+      const { _doctorWorkingHours, ...publicAppointment } = appointment;
+      return publicAppointment;
+    };
+
+    /* ----------------------------------------------
+       12. Final Response
+    ------------------------------------------------*/
+    return res.status(200).json({
+      success: true,
+      range: {
+        from,
+        to,
+      },
+      calendar,
+      appointments: normalizedCalendar.map(removeInternalFields),
+      upcomingAppointments: upcomingAppointments.map(removeInternalFields),
+      previousAppointments: previousAppointments.map(removeInternalFields),
+    });
+  } catch (error) {
+    console.error('getPatientAppointmentsCalendar error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch patient appointments calendar',
       error: error.message,
     });
   }
