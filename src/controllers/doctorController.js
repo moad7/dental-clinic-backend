@@ -1,12 +1,9 @@
 import bcrypt from 'bcrypt';
 import User from '../../models/User.js';
 import mongoose from 'mongoose';
-import {
-  generateTimeSlots,
-  getDateOnlyRange,
-  getWeekdayName,
-} from '../utils/fuctions.js';
+import { generateTimeSlots, getWeekdayName } from '../utils/fuctions.js';
 import TreatmentSession from '../../models/TreatmentSession.js';
+import { getDateOnlyRange } from '../helpers/appointmentHelpers.js';
 
 // GET /api/doctor/getAllDoctors
 export const getAllDoctors = async (req, res) => {

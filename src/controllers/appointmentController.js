@@ -1,11 +1,6 @@
 import mongoose from 'mongoose';
 import Appointment from '../../models/Appointment.js';
 import User from '../../models/User.js';
-import {
-  CONFLICT_STATUSES,
-  getDateOnlyRange,
-  isValidTime,
-} from '../utils/fuctions.js';
 import TreatmentSession from '../../models/TreatmentSession.js';
 import Treatment from '../../models/Treatment.js';
 import {
@@ -24,16 +19,13 @@ import {
   getCurrentDateAndTime,
   compareSessionDateTime,
   getCalendarHours,
+  parseDateOnlyUTC,
+  getDateOnlyRange,
+  isValidTime,
 } from '../helpers/appointmentHelpers.js';
-
-function currentUserId(req) {
-  return req.user?._id;
-}
-
 export const createAppointment = async (req, res) => {
   try {
     const payload = req.body;
-
     const {
       patientId: bodyPatientId,
       doctorId,
@@ -44,13 +36,10 @@ export const createAppointment = async (req, res) => {
       session,
       note,
     } = payload || {};
-
     const createdByRole = req.user.role;
     const createdBy = req.user.userId;
-
     const patientId =
       createdByRole === 'secretary' ? bodyPatientId : req.user.userId;
-
     if (
       !patientId ||
       !doctorId ||
@@ -63,29 +52,29 @@ export const createAppointment = async (req, res) => {
         message: 'Missing required fields',
       });
     }
-
     if (!isValidTime(session.time)) {
       return res.status(400).json({
         message: 'Invalid time format. Expected HH:mm',
       });
     }
-
+    const appointmentDate = parseDateOnlyUTC(session.date);
+    if (!appointmentDate) {
+      return res.status(400).json({
+        message: 'Invalid session date. Expected YYYY-MM-DD',
+      });
+    }
     const ids = [patientId, doctorId, createdBy, serviceGroupId, serviceItemId];
-
     const invalidId = ids.find((id) => !mongoose.Types.ObjectId.isValid(id));
-
     if (invalidId) {
       return res.status(400).json({
         message: 'Invalid ObjectId',
         invalidId,
       });
     }
-
     const patient = await User.findOne({
       _id: patientId,
       role: 'patient',
     });
-
     if (!patient) {
       return res.status(404).json({
         message: 'Patient not found',
@@ -102,21 +91,16 @@ export const createAppointment = async (req, res) => {
       isActive: true,
       'doctor.services.groupId': serviceGroupId,
     });
-
     if (!doctor) {
       return res.status(404).json({
         message: 'Doctor not found or does not provide this service',
       });
     }
-
-    const dateRange = getDateOnlyRange(session.date);
-
-    if (!dateRange) {
-      return res.status(400).json({
-        message: 'Invalid session date',
-      });
-    }
-
+    const dateRange = {
+      start: appointmentDate,
+      end: new Date(appointmentDate),
+    };
+    dateRange.end.setUTCDate(dateRange.end.getUTCDate() + 1);
     const doctorConflict = await TreatmentSession.exists({
       doctorId,
       time: session.time,
@@ -126,20 +110,16 @@ export const createAppointment = async (req, res) => {
         $lt: dateRange.end,
       },
     });
-
     if (doctorConflict) {
       return res.status(409).json({
         message: 'Doctor already has an appointment at this date and time',
       });
     }
-
     const patientTreatments = await Treatment.find({
       userId: patientId,
       status: { $ne: 'completed' },
     }).select('_id');
-
     const treatmentIds = patientTreatments.map((t) => t._id);
-
     if (treatmentIds.length > 0) {
       const patientSameDaySession = await TreatmentSession.exists({
         treatmentId: { $in: treatmentIds },
@@ -149,7 +129,6 @@ export const createAppointment = async (req, res) => {
           $lt: dateRange.end,
         },
       });
-
       if (patientSameDaySession) {
         return res.status(409).json({
           message:
@@ -157,15 +136,14 @@ export const createAppointment = async (req, res) => {
         });
       }
     }
-
-    const sessionsCount = requiresMultipleSessions ? Number(totalSessions) : 1;
-
-    if (!sessionsCount || sessionsCount < 1) {
+    const isMultipleSessions =
+      requiresMultipleSessions === true || requiresMultipleSessions === 'true';
+    const sessionsCount = isMultipleSessions ? Number(totalSessions) : 1;
+    if (!Number.isInteger(sessionsCount) || sessionsCount < 1) {
       return res.status(400).json({
-        message: 'totalSessions must be at least 1',
+        message: 'totalSessions must be an integer greater than or equal to 1',
       });
     }
-
     const treatment = await Treatment.create({
       userId: patientId,
       serviceGroupId,
@@ -175,18 +153,17 @@ export const createAppointment = async (req, res) => {
       createdBy,
       createdByRole,
     });
-
     const treatmentSession = await TreatmentSession.create({
       treatmentId: treatment._id,
+      sessionNumber: 1,
       doctorId,
-      date: new Date(session.date),
+      date: appointmentDate,
       time: session.time,
       status: session.status,
       note: session.note,
       createdBy,
       createdByRole,
     });
-
     return res.status(201).json({
       message: 'Appointment created successfully',
       treatment,
@@ -194,14 +171,12 @@ export const createAppointment = async (req, res) => {
     });
   } catch (error) {
     console.error('createAppointment error:', error);
-
     return res.status(500).json({
       message: 'Failed to create appointment',
       error: error.message,
     });
   }
 };
-
 // GET /api/appointments/
 export const getAllAppointments = async (req, res) => {
   try {
@@ -230,26 +205,21 @@ export const getAllAppointments = async (req, res) => {
       })
       .sort({ date: -1, time: 1 })
       .lean();
-
     const normalizedAppointments = appointments.map((appt) => {
       const treatment = appt.treatmentId;
       const group = treatment?.serviceGroupId;
-
       const serviceItem =
         group?.services?.find(
           (service) => String(service._id) === String(treatment?.serviceItemId),
         ) || null;
-
       const normalizedGroup = group
         ? {
             _id: group._id,
             title: group.title,
           }
         : null;
-
       return {
         ...appt,
-
         treatmentId: treatment
           ? {
               ...treatment,
@@ -270,104 +240,54 @@ export const getAllAppointments = async (req, res) => {
     });
   }
 };
-
 export const updateAppointment = async (req, res) => {
   const mongoSession = await mongoose.startSession();
-
   try {
     const { appointmentId } = req.params;
-
     const { doctorId, date, time, sessionStatus, treatmentStatus, note } =
       req.body;
-
-    /* ----------------------------------------------
-       1. Validate ID
-    ------------------------------------------------*/
     if (!mongoose.Types.ObjectId.isValid(appointmentId)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid appointment id',
       });
     }
-
-    /* ----------------------------------------------
-       2. Validate statuses before transaction
-    ------------------------------------------------*/
     validateSessionStatus(sessionStatus);
     validateTreatmentStatus(treatmentStatus);
-
-    /*
-      Response values.
-      سيتم تعبئتها داخل transaction.
-    */
     let updatedSession = null;
     let updatedTreatment = null;
-
-    /* ----------------------------------------------
-       3. Start Transaction
-    ------------------------------------------------*/
     await mongoSession.withTransaction(async () => {
-      /* ------------------------------------------
-         Get TreatmentSession
-      -------------------------------------------*/
       const appointment =
         await TreatmentSession.findById(appointmentId).session(mongoSession);
-
       if (!appointment) {
         throw new AppointmentError('Appointment not found', 404);
       }
-
-      /* ------------------------------------------
-         Get Treatment
-      -------------------------------------------*/
       const treatment = await Treatment.findById(
         appointment.treatmentId,
       ).session(mongoSession);
-
       if (!treatment) {
         throw new AppointmentError('Treatment not found', 404);
       }
-
-      /* ------------------------------------------
-         4. pending / confirmed require schedule
-      -------------------------------------------*/
       const requiresSchedule =
         sessionStatus === 'pending' || sessionStatus === 'confirmed';
-
       let dateRange = null;
-
       if (requiresSchedule) {
-        /*
-          المستخدم يجب أن يرسل الثلاثة بوضوح
-          عند pending / confirmed.
-        */
         if (!doctorId || !date || !time) {
           throw new AppointmentError(
             'Doctor, date and time are required for pending or confirmed sessions',
             400,
           );
         }
-
         if (!isValidTime(time)) {
           throw new AppointmentError(
             'Invalid time format. Expected HH:mm',
             400,
           );
         }
-
         dateRange = getDateOnlyRange(date);
-
         if (!dateRange) {
           throw new AppointmentError('Invalid appointment date', 400);
         }
-
-        /* ----------------------------------------
-           Doctor:
-           - active
-           - same service
-           - working this day
-           - time inside working hours
-        -----------------------------------------*/
         await validateDoctorForTreatment({
           doctorId,
           treatment,
@@ -377,10 +297,6 @@ export const updateAppointment = async (req, res) => {
           requireActive: true,
           checkWorkingHours: true,
         });
-
-        /* ----------------------------------------
-           Conflict check
-        -----------------------------------------*/
         await checkDoctorAvailability({
           doctorId,
           dateRange,
@@ -389,26 +305,6 @@ export const updateAppointment = async (req, res) => {
           mongoSession,
         });
       }
-
-      /* ------------------------------------------
-         5. For terminal statuses:
-
-         completed
-         cancelled
-         rejected
-
-         date/time/doctorId are NOT required.
-
-         If not provided -> keep old values.
-      -------------------------------------------*/
-
-      /*
-        إذا تم إرسال doctorId في حالة منتهية وكان
-        مختلفًا عن الطبيب الحالي، نتحقق على الأقل
-        من أن الطبيب يقدم نفس الخدمة.
-
-        لا نفحص availability لأن الموعد لم يعد active.
-      */
       if (
         !requiresSchedule &&
         doctorId &&
@@ -424,20 +320,16 @@ export const updateAppointment = async (req, res) => {
           checkWorkingHours: false,
         });
       }
-
       /* ------------------------------------------
          Validate optional date/time
       -------------------------------------------*/
       let optionalDateRange = null;
-
       if (!requiresSchedule && date) {
         optionalDateRange = getDateOnlyRange(date);
-
         if (!optionalDateRange) {
           throw new AppointmentError('Invalid appointment date', 400);
         }
       }
-
       if (!requiresSchedule && time) {
         if (!isValidTime(time)) {
           throw new AppointmentError(
@@ -446,135 +338,59 @@ export const updateAppointment = async (req, res) => {
           );
         }
       }
-
-      /* ------------------------------------------
-         6. Update TreatmentSession
-      -------------------------------------------*/
       appointment.status = sessionStatus;
-
       if (typeof note === 'string') {
         appointment.note = note.trim();
       }
-
-      /*
-        مهم:
-
-        لا نستخدم:
-        appointment.date = null
-        appointment.time = null
-        appointment.doctorId = null
-
-        في cancelled/rejected/completed.
-      */
-
       if (doctorId) {
         appointment.doctorId = doctorId;
       }
-
       if (requiresSchedule && dateRange) {
         appointment.date = dateRange.start;
       } else if (optionalDateRange) {
         appointment.date = optionalDateRange.start;
       }
-
       if (time) {
         appointment.time = time;
       }
-
-      /* ------------------------------------------
-         Save Session first INSIDE transaction
-
-         هذا مهم لأن حساب Treatment.status يجب أن
-         يرى الحالة الجديدة للجلسة.
-      -------------------------------------------*/
       await appointment.save({
         session: mongoSession,
       });
-
-      /* ------------------------------------------
-         7. Calculate Treatment.status
-      -------------------------------------------*/
       let calculatedTreatmentStatus;
-
-      /*
-        ------------------------------
-        Single Session Treatment
-        ------------------------------
-      */
       if (treatment.totalSessions === 1) {
         calculatedTreatmentStatus =
           getTreatmentStatusFromSingleSession(sessionStatus);
       } else {
-        /*
-          ------------------------------
-          Multiple Sessions Treatment
-          ------------------------------
-        */
         const allSessions = await TreatmentSession.find({
           treatmentId: treatment._id,
         })
           .select('_id status')
           .session(mongoSession)
           .lean();
-
         calculatedTreatmentStatus = calculateTreatmentStatusFromSessions({
           sessions: allSessions,
           totalSessions: treatment.totalSessions,
         });
       }
-
-      /* ------------------------------------------
-         8. treatmentStatus sent from frontend?
-
-         Validate only.
-         Frontend is not source of truth.
-      -------------------------------------------*/
       validateRequestedTreatmentStatus({
         requestedStatus: treatmentStatus,
         calculatedStatus: calculatedTreatmentStatus,
       });
-
-      /* ------------------------------------------
-         9. Update Treatment
-      -------------------------------------------*/
       const oldTreatmentStatus = treatment.status;
-
       treatment.status = calculatedTreatmentStatus;
-
-      /* ------------------------------------------
-         completedAt
-      -------------------------------------------*/
       if (calculatedTreatmentStatus === 'completed') {
-        /*
-          لا نغير completedAt كل مرة لو هو
-          مكتمل أصلًا.
-        */
         if (oldTreatmentStatus !== 'completed' || !treatment.completedAt) {
           treatment.completedAt = new Date();
         }
       } else {
-        /*
-          إذا رجع العلاج من completed إلى
-          أي حالة أخرى.
-        */
         treatment.completedAt = null;
       }
-
       await treatment.save({
         session: mongoSession,
       });
-
-      /* ------------------------------------------
-         Store transaction results
-      -------------------------------------------*/
       updatedSession = appointment.toObject();
-
       updatedTreatment = treatment.toObject();
     });
-
-    /* ----------------------------------------------
-       10. Success
-    ------------------------------------------------*/
     return res.status(200).json({
       success: true,
       message: 'Appointment updated successfully',
@@ -583,14 +399,12 @@ export const updateAppointment = async (req, res) => {
     });
   } catch (error) {
     console.error('updateAppointment error:', error);
-
     if (error instanceof AppointmentError) {
       return res.status(error.statusCode).json({
         success: false,
         message: error.message,
       });
     }
-
     return res.status(500).json({
       success: false,
       message: 'Failed to update appointment',
@@ -600,58 +414,43 @@ export const updateAppointment = async (req, res) => {
     await mongoSession.endSession();
   }
 };
-
 const calculateTreatmentStatus = ({ sessions, totalSessions }) => {
   if (totalSessions === 1) {
     const status = sessions[0]?.status;
-
     switch (status) {
       case 'completed':
         return 'completed';
-
       case 'cancelled':
         return 'cancelled';
-
       case 'rejected':
         return 'rejected';
-
       case 'pending':
       case 'confirmed':
       default:
         return 'in_progress';
     }
   }
-
   if (!sessions.length) {
     return 'in_progress';
   }
-
   const statuses = sessions.map((session) => session.status);
-
   const hasAllSessions = sessions.length >= totalSessions;
-
   if (hasAllSessions && statuses.every((status) => status === 'completed')) {
     return 'completed';
   }
-
   if (hasAllSessions && statuses.every((status) => status === 'cancelled')) {
     return 'cancelled';
   }
-
   if (hasAllSessions && statuses.every((status) => status === 'rejected')) {
     return 'rejected';
   }
-
   return 'in_progress';
 };
-
 export const secretaryAppointmentDecision = async (req, res) => {
   const mongoSession = await mongoose.startSession();
-
   try {
     const { appointmentId } = req.params;
     const { decision } = req.body;
-
     /* ------------------------------------------
        Validate appointment id
     -------------------------------------------*/
@@ -661,36 +460,29 @@ export const secretaryAppointmentDecision = async (req, res) => {
         message: 'Invalid appointment id',
       });
     }
-
     /* ------------------------------------------
        Validate decision
     -------------------------------------------*/
     const allowedDecisions = ['approve', 'reject'];
-
     if (!decision || !allowedDecisions.includes(decision)) {
       return res.status(400).json({
         success: false,
         message: 'Decision must be approve or reject',
       });
     }
-
     let updatedSession;
     let updatedTreatment;
-
     await mongoSession.withTransaction(async () => {
       /* --------------------------------------
            Find TreatmentSession
         ---------------------------------------*/
       const appointment =
         await TreatmentSession.findById(appointmentId).session(mongoSession);
-
       if (!appointment) {
         const error = new Error('Appointment not found');
-
         error.statusCode = 404;
         throw error;
       }
-
       /* --------------------------------------
            Only pending can be approved/rejected
         ---------------------------------------*/
@@ -698,25 +490,20 @@ export const secretaryAppointmentDecision = async (req, res) => {
         const error = new Error(
           `Appointment cannot be processed because its current status is "${appointment.status}"`,
         );
-
         error.statusCode = 400;
         throw error;
       }
-
       /* --------------------------------------
            Find Treatment
         ---------------------------------------*/
       const treatment = await Treatment.findById(
         appointment.treatmentId,
       ).session(mongoSession);
-
       if (!treatment) {
         const error = new Error('Treatment not found');
-
         error.statusCode = 404;
         throw error;
       }
-
       /* ======================================
            APPROVE
         =======================================*/
@@ -730,16 +517,13 @@ export const secretaryAppointmentDecision = async (req, res) => {
         })
           .select('_id')
           .session(mongoSession);
-
         if (!doctor) {
           const error = new Error(
             'Doctor is unavailable or does not provide this treatment service',
           );
-
           error.statusCode = 400;
           throw error;
         }
-
         const conflict = await TreatmentSession.findOne({
           _id: {
             $ne: appointment._id,
@@ -753,28 +537,23 @@ export const secretaryAppointmentDecision = async (req, res) => {
         })
           .select('_id')
           .session(mongoSession);
-
         if (conflict) {
           const error = new Error(
             'Doctor already has another appointment at this date and time',
           );
-
           error.statusCode = 409;
           throw error;
         }
       }
-
       /* ======================================
            REJECT
         =======================================*/
       if (decision === 'reject') {
         appointment.status = 'rejected';
       }
-
       await appointment.save({
         session: mongoSession,
       });
-
       /* --------------------------------------
            Recalculate Treatment.status
         ---------------------------------------*/
@@ -784,14 +563,11 @@ export const secretaryAppointmentDecision = async (req, res) => {
         .select('_id status')
         .session(mongoSession)
         .lean();
-
       const treatmentStatus = calculateTreatmentStatus({
         sessions: allSessions,
         totalSessions: treatment.totalSessions,
       });
-
       treatment.status = treatmentStatus;
-
       if (treatmentStatus === 'completed') {
         if (!treatment.completedAt) {
           treatment.completedAt = new Date();
@@ -799,15 +575,12 @@ export const secretaryAppointmentDecision = async (req, res) => {
       } else {
         treatment.completedAt = null;
       }
-
       await treatment.save({
         session: mongoSession,
       });
     });
-
     return res.status(200).json({
       success: true,
-
       message:
         decision === 'approve'
           ? 'Appointment approved successfully'
@@ -823,17 +596,13 @@ export const secretaryAppointmentDecision = async (req, res) => {
     await mongoSession.endSession();
   }
 };
-
 export const getTodayAppointments = async (req, res) => {
   try {
     const now = new Date();
-
     const startOfToday = new Date(now);
     startOfToday.setHours(0, 0, 0, 0);
-
     const endOfToday = new Date(now);
     endOfToday.setHours(23, 59, 59, 999);
-
     const sessions = await TreatmentSession.find({
       date: {
         $gte: startOfToday,
@@ -866,7 +635,6 @@ export const getTodayAppointments = async (req, res) => {
         time: 1,
       })
       .lean();
-
     const appointments = sessions.map((session) => {
       const treatment = session.treatmentId;
       const patient = treatment?.userId;
@@ -876,7 +644,6 @@ export const getTodayAppointments = async (req, res) => {
         serviceGroup?.services?.find(
           (service) => String(service._id) === String(treatment?.serviceItemId),
         ) || null;
-
       return {
         _id: session._id,
         time: session.time,
@@ -885,12 +652,10 @@ export const getTodayAppointments = async (req, res) => {
           name: patient?.name || '-',
           phoneNumber: patient?.phoneNumber || '',
         },
-
         doctor: {
           _id: doctor?._id || null,
           name: doctor?.name || '-',
         },
-
         service: {
           groupId: serviceGroup?._id || null,
           groupTitle: serviceGroup?.title || '-',
@@ -899,11 +664,9 @@ export const getTodayAppointments = async (req, res) => {
         },
         sessionStatus: session.status,
         treatmentStatus: treatment?.status || null,
-
         date: session.date,
       };
     });
-
     return res.status(200).json({
       success: true,
       date: startOfToday,
@@ -912,7 +675,6 @@ export const getTodayAppointments = async (req, res) => {
     });
   } catch (error) {
     console.error('getTodayAppointments error:', error);
-
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch today appointments',
@@ -920,108 +682,77 @@ export const getTodayAppointments = async (req, res) => {
     });
   }
 };
-
 // GET /api/appointments/patient/calendar
 export const getPatientAppointmentsCalendar = async (req, res) => {
   try {
     const patientId = req.user.userId;
-
     const { from, to, status, doctorId, serviceGroupId } = req.query;
-
-    /* ----------------------------------------------
-       1. Validate authenticated patient
-    ------------------------------------------------*/
     if (!patientId || !mongoose.Types.ObjectId.isValid(patientId)) {
       return res.status(401).json({
         success: false,
         message: 'Invalid authenticated user',
       });
     }
-    /* ----------------------------------------------
-       2. Validate range
-    ------------------------------------------------*/
     if (!from || !to) {
       return res.status(400).json({
         success: false,
         message: 'from and to are required',
       });
     }
-
     if (!isValidDateOnly(from) || !isValidDateOnly(to)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid date format. Expected YYYY-MM-DD',
       });
     }
-
     if (from > to) {
       return res.status(400).json({
         success: false,
         message: 'from date must be before or equal to to date',
       });
     }
-
     if (isRangeTooLarge(from, to)) {
       return res.status(400).json({
         success: false,
         message: 'Calendar range cannot exceed 6 months',
       });
     }
-
     const fromRange = getDateOnlyRange(from);
     const toRange = getDateOnlyRange(to);
-
     if (!fromRange || !toRange) {
       return res.status(400).json({
         success: false,
         message: 'Invalid calendar date range',
       });
     }
-
-    /* ----------------------------------------------
-       3. Validate optional filters
-    ------------------------------------------------*/
     if (status && !PATIENT_CALENDAR_SESSION_STATUSES.includes(status)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid session status',
       });
     }
-
     if (doctorId && !mongoose.Types.ObjectId.isValid(doctorId)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid doctorId',
       });
     }
-
     if (serviceGroupId && !mongoose.Types.ObjectId.isValid(serviceGroupId)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid serviceGroupId',
       });
     }
-
-    /* ----------------------------------------------
-       4. Find patient's Treatments
-    ------------------------------------------------*/
     const treatmentFilter = {
       userId: patientId,
     };
-
     if (serviceGroupId) {
       treatmentFilter.serviceGroupId = serviceGroupId;
     }
-
     const treatments = await Treatment.find(treatmentFilter)
       .select('_id userId serviceGroupId serviceItemId status note')
       .lean();
-
     const treatmentIds = treatments.map((treatment) => treatment._id);
-
-    /*
-      Empty state وليس 404.
-    */
     if (!treatmentIds.length) {
       return res.status(200).json({
         success: true,
@@ -1038,9 +769,6 @@ export const getPatientAppointmentsCalendar = async (req, res) => {
         previousAppointments: [],
       });
     }
-    /* ----------------------------------------------
-       5. Session base query
-    ------------------------------------------------*/
     const sessionBaseFilter = {
       treatmentId: {
         $in: treatmentIds,
@@ -1052,10 +780,6 @@ export const getPatientAppointmentsCalendar = async (req, res) => {
     if (doctorId) {
       sessionBaseFilter.doctorId = doctorId;
     }
-
-    /* ----------------------------------------------
-       6. Calendar appointments inside selected range
-    ------------------------------------------------*/
     const calendarFilter = {
       ...sessionBaseFilter,
       date: {
@@ -1063,7 +787,6 @@ export const getPatientAppointmentsCalendar = async (req, res) => {
         $lt: toRange.end,
       },
     };
-
     const calendarSessions = await TreatmentSession.find(calendarFilter)
       .populate({
         path: 'doctorId',
@@ -1086,7 +809,6 @@ export const getPatientAppointmentsCalendar = async (req, res) => {
         time: 1,
       })
       .lean();
-
     const previewSessions = await TreatmentSession.find(sessionBaseFilter)
       .populate({
         path: 'doctorId',
@@ -1109,23 +831,13 @@ export const getPatientAppointmentsCalendar = async (req, res) => {
         time: 1,
       })
       .lean();
-
-    /* ----------------------------------------------
-       8. Normalize
-    ------------------------------------------------*/
     const normalizedCalendar = calendarSessions.map(
       normalizePatientCalendarSession,
     );
-
     const normalizedPreview = previewSessions.map(
       normalizePatientCalendarSession,
     );
-
-    /* ----------------------------------------------
-       9. previous / upcoming
-    ------------------------------------------------*/
     const { date: nowDate, time: nowTime } = getCurrentDateAndTime();
-
     const previousAppointments = normalizedPreview
       .filter((appointment) => {
         return compareSessionDateTime(appointment, nowDate, nowTime) < 0;
@@ -1133,11 +845,9 @@ export const getPatientAppointmentsCalendar = async (req, res) => {
       .sort((a, b) => {
         const aValue = `${a.date} ${a.startTime}`;
         const bValue = `${b.date} ${b.startTime}`;
-
         return bValue.localeCompare(aValue);
       })
       .slice(0, 5);
-
     const upcomingAppointments = normalizedPreview
       .filter((appointment) => {
         if (!['pending', 'confirmed'].includes(appointment.sessionStatus)) {
@@ -1148,27 +858,14 @@ export const getPatientAppointmentsCalendar = async (req, res) => {
       .sort((a, b) => {
         const aValue = `${a.date} ${a.startTime}`;
         const bValue = `${b.date} ${b.startTime}`;
-
         return aValue.localeCompare(bValue);
       })
       .slice(0, 5);
-
-    /* ----------------------------------------------
-       10. Dynamic calendar hours
-    ------------------------------------------------*/
     const calendar = getCalendarHours(normalizedCalendar);
-
-    /* ----------------------------------------------
-       11. Remove internal metadata
-    ------------------------------------------------*/
     const removeInternalFields = (appointment) => {
       const { _doctorWorkingHours, ...publicAppointment } = appointment;
       return publicAppointment;
     };
-
-    /* ----------------------------------------------
-       12. Final Response
-    ------------------------------------------------*/
     return res.status(200).json({
       success: true,
       range: {
@@ -1189,28 +886,23 @@ export const getPatientAppointmentsCalendar = async (req, res) => {
     });
   }
 };
-
 // PUT /api/appointments/:id
 // export const updateAppointment = async (req, res) => {
 //   try {
 //     const { id } = req.params;
 //     const { date, time, note, status } = req.body;
-
 //     const appointment = await Appointment.findById(id);
 //     if (!appointment)
 //       return res.status(404).json({ message: 'Appointment not found' });
-
 //     const isPatient =
 //       req.user.role === 'patient' &&
 //       String(currentUserId(req)) === String(appointment.userId);
 //     const isSecretary = req.user.role === 'secretary';
-
 //     if (!isPatient && !isSecretary) {
 //       return res
 //         .status(403)
 //         .json({ message: 'Unauthorized to update this appointment' });
 //     }
-
 //     if (date !== undefined) {
 //       const d = new Date(date);
 //       appointment.date = new Date(
@@ -1220,7 +912,6 @@ export const getPatientAppointmentsCalendar = async (req, res) => {
 //     if (time !== undefined) appointment.time = time;
 //     if (note !== undefined) appointment.note = note;
 //     if (status !== undefined) appointment.status = status;
-
 //     // لو غيّرنا التاريخ/الوقت، نتأكد من التوفر
 //     if (
 //       (date !== undefined || time !== undefined) &&
@@ -1235,7 +926,6 @@ export const getPatientAppointmentsCalendar = async (req, res) => {
 //       if (clash)
 //         return res.status(409).json({ message: 'Time is not available' });
 //     }
-
 //     await appointment.save();
 //     res
 //       .status(200)
@@ -1246,27 +936,22 @@ export const getPatientAppointmentsCalendar = async (req, res) => {
 //       .json({ message: 'Failed to update appointment', error: err.message });
 //   }
 // };
-
 // DELETE /api/appointments/:id
 // export const deleteAppointment = async (req, res) => {
 //   try {
 //     const { id } = req.params;
-
 //     const appointment = await Appointment.findById(id);
 //     if (!appointment)
 //       return res.status(404).json({ message: 'Appointment not found' });
-
 //     const isPatient =
 //       req.user.role === 'patient' &&
 //       String(currentUserId(req)) === String(appointment.userId);
 //     const isSecretary = req.user.role === 'secretary';
-
 //     if (!isPatient && !isSecretary) {
 //       return res
 //         .status(403)
 //         .json({ message: 'Unauthorized to delete this appointment' });
 //     }
-
 //     await Appointment.deleteOne({ _id: id });
 //     res.status(200).json({ message: 'Appointment deleted successfully' });
 //   } catch (err) {
@@ -1275,7 +960,6 @@ export const getPatientAppointmentsCalendar = async (req, res) => {
 //       .json({ message: 'Failed to delete appointment', error: err.message });
 //   }
 // };
-
 // GET /api/appointments
 // export const getAllAppointments = async (req, res) => {
 //   if (req.user.role !== 'secretary' && req.user.role !== 'doctor') {
@@ -1286,14 +970,12 @@ export const getPatientAppointmentsCalendar = async (req, res) => {
 //       .populate({ path: 'userId', select: 'name phoneNumber', model: User })
 //       .sort({ date: 1, time: 1 })
 //       .lean();
-
 //     // إعادة تسمية بسيطة لمواءمة "as: 'patient'"
 //     const mapped = appointments.map((a) => ({
 //       ...a,
 //       patient: a.userId, // alias
 //       userId: a.userId?._id || a.userId,
 //     }));
-
 //     res.status(200).json(mapped);
 //   } catch (err) {
 //     res
@@ -1301,7 +983,6 @@ export const getPatientAppointmentsCalendar = async (req, res) => {
 //       .json({ message: 'Failed to fetch appointments', error: err.message });
 //   }
 // };
-
 // GET /api/appointments/mine
 // export const getMyAppointments = async (req, res) => {
 //   try {
@@ -1316,7 +997,6 @@ export const getPatientAppointmentsCalendar = async (req, res) => {
 //       .json({ message: 'Failed to fetch appointments', error: err.message });
 //   }
 // };
-
 // GET /api/appointments/today
 // export const getTodayAppointments = async (req, res) => {
 //   try {
@@ -1327,7 +1007,6 @@ export const getPatientAppointmentsCalendar = async (req, res) => {
 //     const end = new Date(
 //       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1),
 //     ); // +1 يوم
-
 //     const appointments = await Appointment.find({
 //       date: { $gte: start, $lt: end },
 //       status: { $ne: 'cancelled' },
@@ -1335,7 +1014,6 @@ export const getPatientAppointmentsCalendar = async (req, res) => {
 //       .populate({ path: 'userId', select: 'name', model: User })
 //       .sort({ time: 1 })
 //       .lean();
-
 //     // alias مثل القديم
 //     const mapped = appointments.map((a) => ({
 //       ...a,
@@ -1350,25 +1028,21 @@ export const getPatientAppointmentsCalendar = async (req, res) => {
 //     });
 //   }
 // };
-
 // GET /api/appointments/check?date=YYYY-MM-DD&time=HH:mm
 // export const checkAvailability = async (req, res) => {
 //   const { date, time } = req.query;
 //   if (!date || !time)
 //     return res.status(400).json({ message: 'Date and time are required' });
-
 //   try {
 //     const d = new Date(date);
 //     const day = new Date(
 //       Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
 //     );
-
 //     const exists = await Appointment.exists({
 //       date: day,
 //       time,
 //       status: { $ne: 'cancelled' },
 //     });
-
 //     res.status(200).json({ available: !exists });
 //   } catch (err) {
 //     res.status(500).json({ message: 'Error checking availability' });

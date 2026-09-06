@@ -5,14 +5,10 @@ import {
   deleteSession,
   getSessionsByTreatment,
 } from '../controllers/treatmentSessionController.js';
-
 import { protect, secretaryOnly } from '../middleware/authMiddleware.js';
-
 const router = express.Router();
-
-router.post('/', protect, createSession);
+router.post('/', protect, secretaryOnly, createSession);
 router.put('/:id', protect, updateSession);
 router.delete('/:id', protect, deleteSession);
 router.get('/:treatmentId', protect, getSessionsByTreatment);
-
 export default router;

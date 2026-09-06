@@ -1,7 +1,6 @@
 import mongoose from 'mongoose';
 import User from '../../models/User.js';
 import TreatmentSession from '../../models/TreatmentSession.js';
-import { isValidTime } from '../utils/fuctions.js';
 
 const SESSION_STATUSES = [
   'pending',
@@ -25,7 +24,9 @@ export const PATIENT_CALENDAR_SESSION_STATUSES = [
   'rejected',
 ];
 const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
-
+export const isValidTime = (time) => {
+  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(time);
+};
 export const isValidDateOnly = (value) => {
   if (!value || !DATE_ONLY_REGEX.test(value)) {
     return false;
@@ -40,6 +41,27 @@ export const isValidDateOnly = (value) => {
     date.getUTCMonth() === month - 1 &&
     date.getUTCDate() === day
   );
+};
+export const parseDateOnlyUTC = (value) => {
+  if (!isValidDateOnly(value)) {
+    return null;
+  }
+
+  const [year, month, day] = value.split('-').map(Number);
+
+  return new Date(Date.UTC(year, month - 1, day));
+};
+export const getDateOnlyRange = (dateString) => {
+  const start = parseDateOnlyUTC(dateString);
+
+  if (!start) {
+    return null;
+  }
+
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 1);
+
+  return { start, end };
 };
 
 export const getDateOnlyValue = (date) => {

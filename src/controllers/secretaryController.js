@@ -2,11 +2,6 @@ import crypto from 'crypto';
 import User from '../../models/User.js';
 import Patient from '../../models/Patient.js';
 import Treatment from '../../models/Treatment.js';
-import {
-  getDateOnlyRange,
-  getWeekdayName,
-  isValidTime,
-} from '../utils/fuctions.js';
 import mongoose from 'mongoose';
 import TreatmentSession from '../../models/TreatmentSession.js';
 import Clinic from '../../models/Clinic.js';
