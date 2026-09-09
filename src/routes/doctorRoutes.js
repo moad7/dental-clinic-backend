@@ -5,11 +5,8 @@ import {
   getDoctorAvailableSlots,
   getDoctorsByService,
 } from '../controllers/doctorController.js';
-
 const router = express.Router();
-
-router.get('/getAllDoctors', protect, secretaryOnly, getAllDoctors);
+router.get('/getAllDoctors', protect, getAllDoctors);
 router.post('/getDoctorsByService', protect, getDoctorsByService);
 router.post('/doctorAvailableSlots', protect, getDoctorAvailableSlots);
-
 export default router;

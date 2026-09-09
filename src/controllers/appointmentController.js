@@ -1,5 +1,4 @@
 import mongoose from 'mongoose';
-import Appointment from '../../models/Appointment.js';
 import User from '../../models/User.js';
 import TreatmentSession from '../../models/TreatmentSession.js';
 import Treatment from '../../models/Treatment.js';
@@ -23,9 +22,199 @@ import {
   getDateOnlyRange,
   isValidTime,
 } from '../helpers/appointmentHelpers.js';
+import {
+  getDoctorBookedPeriods,
+  getServiceItem,
+  hasDoctorTimeConflict,
+  timeToMinutes,
+  CONFLICT_STATUSES,
+} from '../utils/appointmentAvailability.js';
+import { getWeekdayName } from '../utils/fuctions.js';
+// export const createAppointment = async (req, res) => {
+//   try {
+//     const payload = req.body;
+//     const {
+//       patientId: bodyPatientId,
+//       doctorId,
+//       serviceGroupId,
+//       serviceItemId,
+//       requiresMultipleSessions,
+//       totalSessions,
+//       session,
+//       note,
+//     } = payload || {};
+//     const createdByRole = req.user.role;
+//     const createdBy = req.user.userId;
+//     const patientId =
+//       createdByRole === 'secretary' ? bodyPatientId : req.user.userId;
+//     if (
+//       !patientId ||
+//       !doctorId ||
+//       !serviceGroupId ||
+//       !serviceItemId ||
+//       !session?.date ||
+//       !session?.time
+//     ) {
+//       return res.status(400).json({
+//         message: 'Missing required fields',
+//       });
+//     }
+//     if (!isValidTime(session.time)) {
+//       return res.status(400).json({
+//         message: 'Invalid time format. Expected HH:mm',
+//       });
+//     }
+//     const appointmentDate = parseDateOnlyUTC(session.date);
+//     if (!appointmentDate) {
+//       return res.status(400).json({
+//         message: 'Invalid session date. Expected YYYY-MM-DD',
+//       });
+//     }
+//     const ids = [patientId, doctorId, createdBy, serviceGroupId, serviceItemId];
+//     const invalidId = ids.find((id) => !mongoose.Types.ObjectId.isValid(id));
+//     if (invalidId) {
+//       return res.status(400).json({
+//         message: 'Invalid ObjectId',
+//         invalidId,
+//       });
+//     }
+//     const patient = await User.findOne({
+//       _id: patientId,
+//       role: 'patient',
+//     });
+//     if (!patient) {
+//       return res.status(404).json({
+//         message: 'Patient not found',
+//       });
+//     }
+//     if (!patient.isActive) {
+//       return res.status(404).json({
+//         message: `The patient is inactive`,
+//       });
+//     }
+//     const doctor = await User.findOne({
+//       _id: doctorId,
+//       role: 'doctor',
+//       isActive: true,
+//       'doctor.services.groupId': serviceGroupId,
+//     });
+//     if (!doctor) {
+//       return res.status(404).json({
+//         message: 'Doctor not found or does not provide this service',
+//       });
+//     }
+//     const serviceGroup = await Service.findById(serviceGroupId).lean();
+//     if (!serviceGroup) {
+//       return res.status(404).json({
+//         message: 'Service group not found',
+//       });
+//     }
+//     const serviceItem = serviceGroup.services?.find(
+//       (item) => String(item._id) === String(serviceItemId),
+//     );
+//     if (!serviceItem) {
+//       return res.status(404).json({
+//         message: 'Service item not found in selected service group',
+//       });
+//     }
+//     const durationMin = Number(serviceItem.durationMin);
+//     if (!durationMin || durationMin <= 0) {
+//       return res.status(400).json({
+//         message: 'Invalid service duration',
+//       });
+//     }
+//     const dateRange = {
+//       start: appointmentDate,
+//       end: new Date(appointmentDate),
+//     };
+//     dateRange.end.setUTCDate(dateRange.end.getUTCDate() + 1);
+//     const doctorConflict = await TreatmentSession.exists({
+//       doctorId,
+//       status: { $in: ['pending', 'confirmed'] },
+//       date: {
+//         $gte: dateRange.start,
+//         $lt: dateRange.end,
+//       },
+//     })
+//       .populate({
+//         path: 'treatmentId',
+//         select: 'serviceGroupId serviceItemId',
+//       })
+//       .lean();
+//     if (doctorConflict) {
+//       return res.status(409).json({
+//         message: 'Doctor already has an appointment at this date and time',
+//       });
+//     }
+//     const patientTreatments = await Treatment.find({
+//       userId: patientId,
+//       status: { $ne: 'completed' },
+//     }).select('_id');
+//     const treatmentIds = patientTreatments.map((t) => t._id);
+//     if (treatmentIds.length > 0) {
+//       const patientSameDaySession = await TreatmentSession.exists({
+//         treatmentId: { $in: treatmentIds },
+//         status: { $ne: 'completed' },
+//         date: {
+//           $gte: dateRange.start,
+//           $lt: dateRange.end,
+//         },
+//       });
+//       if (patientSameDaySession) {
+//         return res.status(409).json({
+//           message:
+//             'Patient already has an appointment on this day. Complete the existing appointment first.',
+//         });
+//       }
+//     }
+//     const isMultipleSessions =
+//       requiresMultipleSessions === true || requiresMultipleSessions === 'true';
+//     const sessionsCount = isMultipleSessions ? Number(totalSessions) : 1;
+//     if (!Number.isInteger(sessionsCount) || sessionsCount < 1) {
+//       return res.status(400).json({
+//         message: 'totalSessions must be an integer greater than or equal to 1',
+//       });
+//     }
+//     const treatment = await Treatment.create({
+//       userId: patientId,
+//       serviceGroupId,
+//       serviceItemId,
+//       totalSessions: sessionsCount,
+//       note,
+//       createdBy,
+//       createdByRole,
+//     });
+//     const sessionStatus =
+//       createdByRole === 'secretary' && session?.status
+//         ? session.status
+//         : 'pending';
+//     const treatmentSession = await TreatmentSession.create({
+//       treatmentId: treatment._id,
+//       sessionNumber: 1,
+//       doctorId,
+//       date: appointmentDate,
+//       time: session.time,
+//       status: sessionStatus,
+//       note: session.note,
+//       createdBy,
+//       createdByRole,
+//     });
+//     return res.status(201).json({
+//       message: 'Appointment created successfully',
+//       treatment,
+//       session: treatmentSession,
+//     });
+//   } catch (error) {
+//     console.error('createAppointment error:', error);
+//     return res.status(500).json({
+//       message: 'Failed to create appointment',
+//       error: error.message,
+//     });
+//   }
+// };
+// GET /api/appointments/
 export const createAppointment = async (req, res) => {
   try {
-    const payload = req.body;
     const {
       patientId: bodyPatientId,
       doctorId,
@@ -35,11 +224,14 @@ export const createAppointment = async (req, res) => {
       totalSessions,
       session,
       note,
-    } = payload || {};
+    } = req.body || {};
     const createdByRole = req.user.role;
     const createdBy = req.user.userId;
     const patientId =
       createdByRole === 'secretary' ? bodyPatientId : req.user.userId;
+    /* =========================
+       REQUIRED FIELDS
+    ========================= */
     if (
       !patientId ||
       !doctorId ||
@@ -52,17 +244,26 @@ export const createAppointment = async (req, res) => {
         message: 'Missing required fields',
       });
     }
+    /* =========================
+       TIME
+    ========================= */
     if (!isValidTime(session.time)) {
       return res.status(400).json({
         message: 'Invalid time format. Expected HH:mm',
       });
     }
+    /* =========================
+       DATE
+    ========================= */
     const appointmentDate = parseDateOnlyUTC(session.date);
     if (!appointmentDate) {
       return res.status(400).json({
         message: 'Invalid session date. Expected YYYY-MM-DD',
       });
     }
+    /* =========================
+       IDS
+    ========================= */
     const ids = [patientId, doctorId, createdBy, serviceGroupId, serviceItemId];
     const invalidId = ids.find((id) => !mongoose.Types.ObjectId.isValid(id));
     if (invalidId) {
@@ -71,6 +272,9 @@ export const createAppointment = async (req, res) => {
         invalidId,
       });
     }
+    /* =========================
+       PATIENT
+    ========================= */
     const patient = await User.findOne({
       _id: patientId,
       role: 'patient',
@@ -81,61 +285,130 @@ export const createAppointment = async (req, res) => {
       });
     }
     if (!patient.isActive) {
-      return res.status(404).json({
-        message: `The patient is inactive`,
+      return res.status(400).json({
+        message: 'The patient is inactive',
       });
     }
+    /* =========================
+       DOCTOR
+    ========================= */
     const doctor = await User.findOne({
       _id: doctorId,
       role: 'doctor',
       isActive: true,
       'doctor.services.groupId': serviceGroupId,
-    });
+    }).lean();
     if (!doctor) {
       return res.status(404).json({
         message: 'Doctor not found or does not provide this service',
       });
     }
+    /* =========================
+       SERVICE
+    ========================= */
+    const { serviceGroup, serviceItem } = await getServiceItem(
+      serviceGroupId,
+      serviceItemId,
+    );
+    if (!serviceGroup) {
+      return res.status(404).json({
+        message: 'Service group not found',
+      });
+    }
+    if (!serviceItem) {
+      return res.status(404).json({
+        message: 'Service item not found in selected service group',
+      });
+    }
+    const durationMin = Number(serviceItem.durationMin);
+    if (!Number.isFinite(durationMin) || durationMin <= 0) {
+      return res.status(400).json({
+        message: 'Invalid service duration',
+      });
+    }
+    /* =========================
+       DATE RANGE
+    ========================= */
     const dateRange = {
       start: appointmentDate,
       end: new Date(appointmentDate),
     };
     dateRange.end.setUTCDate(dateRange.end.getUTCDate() + 1);
-    const doctorConflict = await TreatmentSession.exists({
+    /* =========================
+       WORKING HOURS
+    ========================= */
+    const weekday = getWeekdayName(session.date);
+    if (!weekday) {
+      return res.status(400).json({
+        message: 'Invalid weekday',
+      });
+    }
+    const workDay = doctor.doctor?.workingHours?.find(
+      (day) => day.day === weekday && !day.isClosed,
+    );
+    if (!workDay) {
+      return res.status(409).json({
+        message: 'Doctor is not working on the selected day',
+      });
+    }
+    const appointmentStart = timeToMinutes(session.time);
+    const appointmentEnd = appointmentStart + durationMin;
+    const workStart = timeToMinutes(workDay.start);
+    const workEnd = timeToMinutes(workDay.end);
+    if (appointmentStart < workStart || appointmentEnd > workEnd) {
+      return res.status(409).json({
+        message: 'Selected time is outside doctor working hours',
+      });
+    }
+    /* =========================
+       DOCTOR CONFLICT
+    ========================= */
+    const bookedPeriods = await getDoctorBookedPeriods({
       doctorId,
-      time: session.time,
-      status: { $in: ['pending', 'confirmed'] },
-      date: {
-        $gte: dateRange.start,
-        $lt: dateRange.end,
-      },
+      dateRange,
+    });
+    const doctorConflict = hasDoctorTimeConflict({
+      startTime: session.time,
+      durationMin,
+      bookedPeriods,
     });
     if (doctorConflict) {
       return res.status(409).json({
-        message: 'Doctor already has an appointment at this date and time',
+        message:
+          'Doctor already has an overlapping appointment at this date and time',
       });
     }
+    /* =========================
+       PATIENT SAME DAY
+    ========================= */
     const patientTreatments = await Treatment.find({
       userId: patientId,
-      status: { $ne: 'completed' },
+      status: 'in_progress',
     }).select('_id');
-    const treatmentIds = patientTreatments.map((t) => t._id);
-    if (treatmentIds.length > 0) {
-      const patientSameDaySession = await TreatmentSession.exists({
-        treatmentId: { $in: treatmentIds },
-        status: { $ne: 'completed' },
+    const treatmentIds = patientTreatments.map((treatment) => treatment._id);
+    if (treatmentIds.length) {
+      const patientConflict = await TreatmentSession.exists({
+        treatmentId: {
+          $in: treatmentIds,
+        },
+        status: {
+          $in: CONFLICT_STATUSES,
+        },
         date: {
           $gte: dateRange.start,
           $lt: dateRange.end,
         },
       });
-      if (patientSameDaySession) {
+      if (patientConflict) {
         return res.status(409).json({
           message:
             'Patient already has an appointment on this day. Complete the existing appointment first.',
         });
       }
     }
+    /* =========================
+       TOTAL SESSIONS
+    ========================= */
     const isMultipleSessions =
       requiresMultipleSessions === true || requiresMultipleSessions === 'true';
     const sessionsCount = isMultipleSessions ? Number(totalSessions) : 1;
@@ -144,6 +417,9 @@ export const createAppointment = async (req, res) => {
         message: 'totalSessions must be an integer greater than or equal to 1',
       });
     }
+    /* =========================
+       CREATE TREATMENT
+    ========================= */
     const treatment = await Treatment.create({
       userId: patientId,
       serviceGroupId,
@@ -153,13 +429,25 @@ export const createAppointment = async (req, res) => {
       createdBy,
       createdByRole,
     });
+    /* =========================
+       STATUS
+    ========================= */
+    const allowedSecretaryStatuses = ['pending', 'confirmed'];
+    const sessionStatus =
+      createdByRole === 'secretary' &&
+      allowedSecretaryStatuses.includes(session?.status)
+        ? session.status
+        : 'pending';
+    /* =========================
+       CREATE SESSION
+    ========================= */
     const treatmentSession = await TreatmentSession.create({
       treatmentId: treatment._id,
       sessionNumber: 1,
       doctorId,
       date: appointmentDate,
       time: session.time,
-      status: session.status,
+      status: sessionStatus,
       note: session.note,
       createdBy,
       createdByRole,
@@ -177,7 +465,6 @@ export const createAppointment = async (req, res) => {
     });
   }
 };
-// GET /api/appointments/
 export const getAllAppointments = async (req, res) => {
   try {
     const appointments = await TreatmentSession.find()
