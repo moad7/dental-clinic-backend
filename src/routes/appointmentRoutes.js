@@ -6,12 +6,10 @@ import {
   updateAppointment,
   getTodayAppointments,
   getPatientAppointmentsCalendar,
+  getPatientTreatmentPlans,
 } from '../controllers/appointmentController.js';
-
 import { protect, authorize } from '../middleware/authMiddleware.js';
-
 const router = express.Router();
-
 router.post(
   '/createAppointment',
   protect,
@@ -32,6 +30,11 @@ router.patch(
   authorize('secretary'),
   secretaryAppointmentDecision,
 );
-
 router.get('/today', protect, authorize('secretary'), getTodayAppointments);
+router.get(
+  '/patient/treatments',
+  protect,
+  authorize('patient'),
+  getPatientTreatmentPlans,
+);
 export default router;

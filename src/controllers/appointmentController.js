@@ -30,188 +30,7 @@ import {
   CONFLICT_STATUSES,
 } from '../utils/appointmentAvailability.js';
 import { getWeekdayName } from '../utils/fuctions.js';
-// export const createAppointment = async (req, res) => {
-//   try {
-//     const payload = req.body;
-//     const {
-//       patientId: bodyPatientId,
-//       doctorId,
-//       serviceGroupId,
-//       serviceItemId,
-//       requiresMultipleSessions,
-//       totalSessions,
-//       session,
-//       note,
-//     } = payload || {};
-//     const createdByRole = req.user.role;
-//     const createdBy = req.user.userId;
-//     const patientId =
-//       createdByRole === 'secretary' ? bodyPatientId : req.user.userId;
-//     if (
-//       !patientId ||
-//       !doctorId ||
-//       !serviceGroupId ||
-//       !serviceItemId ||
-//       !session?.date ||
-//       !session?.time
-//     ) {
-//       return res.status(400).json({
-//         message: 'Missing required fields',
-//       });
-//     }
-//     if (!isValidTime(session.time)) {
-//       return res.status(400).json({
-//         message: 'Invalid time format. Expected HH:mm',
-//       });
-//     }
-//     const appointmentDate = parseDateOnlyUTC(session.date);
-//     if (!appointmentDate) {
-//       return res.status(400).json({
-//         message: 'Invalid session date. Expected YYYY-MM-DD',
-//       });
-//     }
-//     const ids = [patientId, doctorId, createdBy, serviceGroupId, serviceItemId];
-//     const invalidId = ids.find((id) => !mongoose.Types.ObjectId.isValid(id));
-//     if (invalidId) {
-//       return res.status(400).json({
-//         message: 'Invalid ObjectId',
-//         invalidId,
-//       });
-//     }
-//     const patient = await User.findOne({
-//       _id: patientId,
-//       role: 'patient',
-//     });
-//     if (!patient) {
-//       return res.status(404).json({
-//         message: 'Patient not found',
-//       });
-//     }
-//     if (!patient.isActive) {
-//       return res.status(404).json({
-//         message: `The patient is inactive`,
-//       });
-//     }
-//     const doctor = await User.findOne({
-//       _id: doctorId,
-//       role: 'doctor',
-//       isActive: true,
-//       'doctor.services.groupId': serviceGroupId,
-//     });
-//     if (!doctor) {
-//       return res.status(404).json({
-//         message: 'Doctor not found or does not provide this service',
-//       });
-//     }
-//     const serviceGroup = await Service.findById(serviceGroupId).lean();
-//     if (!serviceGroup) {
-//       return res.status(404).json({
-//         message: 'Service group not found',
-//       });
-//     }
-//     const serviceItem = serviceGroup.services?.find(
-//       (item) => String(item._id) === String(serviceItemId),
-//     );
-//     if (!serviceItem) {
-//       return res.status(404).json({
-//         message: 'Service item not found in selected service group',
-//       });
-//     }
-//     const durationMin = Number(serviceItem.durationMin);
-//     if (!durationMin || durationMin <= 0) {
-//       return res.status(400).json({
-//         message: 'Invalid service duration',
-//       });
-//     }
-//     const dateRange = {
-//       start: appointmentDate,
-//       end: new Date(appointmentDate),
-//     };
-//     dateRange.end.setUTCDate(dateRange.end.getUTCDate() + 1);
-//     const doctorConflict = await TreatmentSession.exists({
-//       doctorId,
-//       status: { $in: ['pending', 'confirmed'] },
-//       date: {
-//         $gte: dateRange.start,
-//         $lt: dateRange.end,
-//       },
-//     })
-//       .populate({
-//         path: 'treatmentId',
-//         select: 'serviceGroupId serviceItemId',
-//       })
-//       .lean();
-//     if (doctorConflict) {
-//       return res.status(409).json({
-//         message: 'Doctor already has an appointment at this date and time',
-//       });
-//     }
-//     const patientTreatments = await Treatment.find({
-//       userId: patientId,
-//       status: { $ne: 'completed' },
-//     }).select('_id');
-//     const treatmentIds = patientTreatments.map((t) => t._id);
-//     if (treatmentIds.length > 0) {
-//       const patientSameDaySession = await TreatmentSession.exists({
-//         treatmentId: { $in: treatmentIds },
-//         status: { $ne: 'completed' },
-//         date: {
-//           $gte: dateRange.start,
-//           $lt: dateRange.end,
-//         },
-//       });
-//       if (patientSameDaySession) {
-//         return res.status(409).json({
-//           message:
-//             'Patient already has an appointment on this day. Complete the existing appointment first.',
-//         });
-//       }
-//     }
-//     const isMultipleSessions =
-//       requiresMultipleSessions === true || requiresMultipleSessions === 'true';
-//     const sessionsCount = isMultipleSessions ? Number(totalSessions) : 1;
-//     if (!Number.isInteger(sessionsCount) || sessionsCount < 1) {
-//       return res.status(400).json({
-//         message: 'totalSessions must be an integer greater than or equal to 1',
-//       });
-//     }
-//     const treatment = await Treatment.create({
-//       userId: patientId,
-//       serviceGroupId,
-//       serviceItemId,
-//       totalSessions: sessionsCount,
-//       note,
-//       createdBy,
-//       createdByRole,
-//     });
-//     const sessionStatus =
-//       createdByRole === 'secretary' && session?.status
-//         ? session.status
-//         : 'pending';
-//     const treatmentSession = await TreatmentSession.create({
-//       treatmentId: treatment._id,
-//       sessionNumber: 1,
-//       doctorId,
-//       date: appointmentDate,
-//       time: session.time,
-//       status: sessionStatus,
-//       note: session.note,
-//       createdBy,
-//       createdByRole,
-//     });
-//     return res.status(201).json({
-//       message: 'Appointment created successfully',
-//       treatment,
-//       session: treatmentSession,
-//     });
-//   } catch (error) {
-//     console.error('createAppointment error:', error);
-//     return res.status(500).json({
-//       message: 'Failed to create appointment',
-//       error: error.message,
-//     });
-//   }
-// };
+import Service from '../../models/Service.js';
 // GET /api/appointments/
 export const createAppointment = async (req, res) => {
   try {
@@ -1173,165 +992,210 @@ export const getPatientAppointmentsCalendar = async (req, res) => {
     });
   }
 };
-// PUT /api/appointments/:id
-// export const updateAppointment = async (req, res) => {
-//   try {
-//     const { id } = req.params;
-//     const { date, time, note, status } = req.body;
-//     const appointment = await Appointment.findById(id);
-//     if (!appointment)
-//       return res.status(404).json({ message: 'Appointment not found' });
-//     const isPatient =
-//       req.user.role === 'patient' &&
-//       String(currentUserId(req)) === String(appointment.userId);
-//     const isSecretary = req.user.role === 'secretary';
-//     if (!isPatient && !isSecretary) {
-//       return res
-//         .status(403)
-//         .json({ message: 'Unauthorized to update this appointment' });
-//     }
-//     if (date !== undefined) {
-//       const d = new Date(date);
-//       appointment.date = new Date(
-//         Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
-//       );
-//     }
-//     if (time !== undefined) appointment.time = time;
-//     if (note !== undefined) appointment.note = note;
-//     if (status !== undefined) appointment.status = status;
-//     // لو غيّرنا التاريخ/الوقت، نتأكد من التوفر
-//     if (
-//       (date !== undefined || time !== undefined) &&
-//       appointment.status !== 'cancelled'
-//     ) {
-//       const clash = await Appointment.findOne({
-//         _id: { $ne: appointment._id },
-//         date: appointment.date,
-//         time: appointment.time,
-//         status: { $ne: 'cancelled' },
-//       }).lean();
-//       if (clash)
-//         return res.status(409).json({ message: 'Time is not available' });
-//     }
-//     await appointment.save();
-//     res
-//       .status(200)
-//       .json({ message: 'Appointment updated successfully', appointment });
-//   } catch (err) {
-//     res
-//       .status(500)
-//       .json({ message: 'Failed to update appointment', error: err.message });
-//   }
-// };
-// DELETE /api/appointments/:id
-// export const deleteAppointment = async (req, res) => {
-//   try {
-//     const { id } = req.params;
-//     const appointment = await Appointment.findById(id);
-//     if (!appointment)
-//       return res.status(404).json({ message: 'Appointment not found' });
-//     const isPatient =
-//       req.user.role === 'patient' &&
-//       String(currentUserId(req)) === String(appointment.userId);
-//     const isSecretary = req.user.role === 'secretary';
-//     if (!isPatient && !isSecretary) {
-//       return res
-//         .status(403)
-//         .json({ message: 'Unauthorized to delete this appointment' });
-//     }
-//     await Appointment.deleteOne({ _id: id });
-//     res.status(200).json({ message: 'Appointment deleted successfully' });
-//   } catch (err) {
-//     res
-//       .status(500)
-//       .json({ message: 'Failed to delete appointment', error: err.message });
-//   }
-// };
-// GET /api/appointments
-// export const getAllAppointments = async (req, res) => {
-//   if (req.user.role !== 'secretary' && req.user.role !== 'doctor') {
-//     return res.status(403).json({ message: 'Unauthorized' });
-//   }
-//   try {
-//     const appointments = await Appointment.find({})
-//       .populate({ path: 'userId', select: 'name phoneNumber', model: User })
-//       .sort({ date: 1, time: 1 })
-//       .lean();
-//     // إعادة تسمية بسيطة لمواءمة "as: 'patient'"
-//     const mapped = appointments.map((a) => ({
-//       ...a,
-//       patient: a.userId, // alias
-//       userId: a.userId?._id || a.userId,
-//     }));
-//     res.status(200).json(mapped);
-//   } catch (err) {
-//     res
-//       .status(500)
-//       .json({ message: 'Failed to fetch appointments', error: err.message });
-//   }
-// };
-// GET /api/appointments/mine
-// export const getMyAppointments = async (req, res) => {
-//   try {
-//     const myId = currentUserId(req);
-//     const appointments = await Appointment.find({ userId: myId })
-//       .sort({ date: 1, time: 1 })
-//       .lean();
-//     res.status(200).json(appointments);
-//   } catch (err) {
-//     res
-//       .status(500)
-//       .json({ message: 'Failed to fetch appointments', error: err.message });
-//   }
-// };
-// GET /api/appointments/today
-// export const getTodayAppointments = async (req, res) => {
-//   try {
-//     const now = new Date();
-//     const start = new Date(
-//       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-//     ); // 00:00 UTC
-//     const end = new Date(
-//       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1),
-//     ); // +1 يوم
-//     const appointments = await Appointment.find({
-//       date: { $gte: start, $lt: end },
-//       status: { $ne: 'cancelled' },
-//     })
-//       .populate({ path: 'userId', select: 'name', model: User })
-//       .sort({ time: 1 })
-//       .lean();
-//     // alias مثل القديم
-//     const mapped = appointments.map((a) => ({
-//       ...a,
-//       patient: a.userId,
-//       userId: a.userId?._id || a.userId,
-//     }));
-//     res.status(200).json(mapped);
-//   } catch (err) {
-//     res.status(500).json({
-//       message: "Failed to fetch today's appointments",
-//       error: err.message,
-//     });
-//   }
-// };
-// GET /api/appointments/check?date=YYYY-MM-DD&time=HH:mm
-// export const checkAvailability = async (req, res) => {
-//   const { date, time } = req.query;
-//   if (!date || !time)
-//     return res.status(400).json({ message: 'Date and time are required' });
-//   try {
-//     const d = new Date(date);
-//     const day = new Date(
-//       Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
-//     );
-//     const exists = await Appointment.exists({
-//       date: day,
-//       time,
-//       status: { $ne: 'cancelled' },
-//     });
-//     res.status(200).json({ available: !exists });
-//   } catch (err) {
-//     res.status(500).json({ message: 'Error checking availability' });
-//   }
-// };
+export const getPatientTreatmentPlans = async (req, res) => {
+  try {
+    const patientId = req.user.userId;
+    if (!mongoose.Types.ObjectId.isValid(patientId)) {
+      return res.status(400).json({
+        message: 'Invalid patient id',
+      });
+    }
+    const treatments = await Treatment.find({
+      userId: patientId,
+    })
+      .sort({
+        createdAt: -1,
+      })
+      .lean();
+    if (!treatments.length) {
+      return res.status(200).json({
+        success: true,
+        treatments: [],
+      });
+    }
+    /*
+     * =========================
+     * SERVICE GROUPS
+     * =========================
+     */
+    const serviceGroupIds = [
+      ...new Set(
+        treatments
+          .map((treatment) => treatment.serviceGroupId?.toString())
+          .filter(Boolean),
+      ),
+    ];
+    const serviceGroups = await Service.find({
+      _id: {
+        $in: serviceGroupIds,
+      },
+    }).lean();
+    const serviceGroupMap = new Map(
+      serviceGroups.map((group) => [String(group._id), group]),
+    );
+    /*
+     * =========================
+     * SESSIONS
+     * =========================
+     */
+    const treatmentIds = treatments.map((treatment) => treatment._id);
+    const sessions = await TreatmentSession.find({
+      treatmentId: {
+        $in: treatmentIds,
+      },
+    })
+      .populate({
+        path: 'doctorId',
+        select: 'name avatar doctor',
+      })
+      .sort({
+        date: 1,
+        time: 1,
+      })
+      .lean();
+    /*
+     * group sessions by treatmentId
+     */
+    const sessionsMap = new Map();
+    sessions.forEach((session) => {
+      const key = String(session.treatmentId);
+      if (!sessionsMap.has(key)) {
+        sessionsMap.set(key, []);
+      }
+      sessionsMap.get(key).push(session);
+    });
+    /*
+     * =========================
+     * FORMAT
+     * =========================
+     */
+    const formattedTreatments = treatments.map((treatment) => {
+      const treatmentSessions = sessionsMap.get(String(treatment._id)) || [];
+      const serviceGroup = serviceGroupMap.get(
+        String(treatment.serviceGroupId),
+      );
+      const serviceItem = serviceGroup?.services?.find(
+        (item) => String(item._id) === String(treatment.serviceItemId),
+      );
+      /*
+       * completed sessions
+       */
+      const completedSessions = treatmentSessions.filter(
+        (session) => session.status === 'completed',
+      ).length;
+      const totalSessions = Number(treatment.totalSessions) || 1;
+      const progress =
+        totalSessions > 0
+          ? Math.min(100, Math.round((completedSessions / totalSessions) * 100))
+          : 0;
+      /*
+       * first session
+       */
+      const firstSession =
+        treatmentSessions.length > 0 ? treatmentSessions[0] : null;
+      /*
+       * next session
+       */
+      const now = new Date();
+      const nextSession =
+        treatmentSessions.find((session) => {
+          if (!['pending', 'confirmed'].includes(session.status)) {
+            return false;
+          }
+          const dateOnly =
+            session.date instanceof Date
+              ? session.date.toISOString().slice(0, 10)
+              : String(session.date).slice(0, 10);
+          const sessionDateTime = new Date(`${dateOnly}T${session.time}:00`);
+          return sessionDateTime >= now;
+        }) || null;
+      /*
+       * latest doctor
+       */
+      const sessionWithDoctor =
+        [...treatmentSessions].reverse().find((session) => session.doctorId) ||
+        null;
+      const doctor = sessionWithDoctor?.doctorId || null;
+      /*
+       * formatted sessions
+       */
+      const formattedSessions = treatmentSessions.map((session) => ({
+        _id: session._id,
+        sessionNumber: session.sessionNumber,
+        date: session.date,
+        time: session.time,
+        status: session.status,
+        note: session.note || '',
+        doctor: session.doctorId
+          ? {
+              _id: session.doctorId._id,
+              name: session.doctorId.name,
+              avatar: session.doctorId.avatar || null,
+            }
+          : null,
+        durationMin: serviceItem?.durationMin || null,
+      }));
+      /*
+       * Expected end date:
+       * for now use last scheduled session.
+       */
+      const lastSession =
+        treatmentSessions.length > 0
+          ? treatmentSessions[treatmentSessions.length - 1]
+          : null;
+      return {
+        _id: treatment._id,
+        status: treatment.status,
+        note: treatment.note || '',
+        createdAt: treatment.createdAt,
+        serviceGroup: serviceGroup
+          ? {
+              _id: serviceGroup._id,
+              title: serviceGroup.title,
+            }
+          : null,
+        service: serviceItem
+          ? {
+              _id: serviceItem._id,
+              name: serviceItem.name,
+              description: serviceItem.description || '',
+              durationMin: serviceItem.durationMin,
+              price: serviceItem.price,
+              photo: serviceItem.photo || null,
+            }
+          : null,
+        doctor: doctor
+          ? {
+              _id: doctor._id,
+              name: doctor.name,
+              avatar: doctor.avatar || null,
+            }
+          : null,
+        totalSessions,
+        completedSessions,
+        progress,
+        startDate: firstSession?.date || treatment.createdAt,
+        expectedEndDate: lastSession?.date || null,
+        nextSession: nextSession
+          ? {
+              _id: nextSession._id,
+              date: nextSession.date,
+              time: nextSession.time,
+              status: nextSession.status,
+            }
+          : null,
+        sessions: formattedSessions,
+      };
+    });
+    return res.status(200).json({
+      success: true,
+      treatments: formattedTreatments,
+    });
+  } catch (error) {
+    console.error('getPatientTreatmentPlans error:', error);
+    return res.status(500).json({
+      message: 'Failed to get patient treatment plans',
+      error: error.message,
+    });
+  }
+};

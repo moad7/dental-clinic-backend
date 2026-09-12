@@ -32,7 +32,7 @@ const AppointmentSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-// فهارس مركبة مفيدة للاستعلامات الزمنية
+
 AppointmentSchema.index({ date: 1, time: 1 });
 AppointmentSchema.index({ userId: 1, date: 1, time: 1 });
 AppointmentSchema.virtual('Treatments', {
@@ -40,7 +40,7 @@ AppointmentSchema.virtual('Treatments', {
   localField: '_id',
   foreignField: 'appointmentId',
 });
-// (اختياري) method بسيطة لحساب التعارض خارج الكنترولر
+
 AppointmentSchema.statics.hasConflict = async function ({
   date,
   time,
