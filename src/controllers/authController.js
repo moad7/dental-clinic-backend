@@ -4,29 +4,24 @@ import Patient from '../../models/Patient.js';
 import OTP from '../../models/Otp.js';
 import SmsService from '../services/smsService.js';
 import jwt from 'jsonwebtoken';
-
 function currentUserId(req) {
   return req.user?.userId || req.user?._id || req.user?.sub;
 }
-
 // POST /api/auth/register
 export const registerUser = async (req, res) => {
   try {
     const { name, phoneNumber, password, email } = req.body;
-
     if (!name || !phoneNumber || !password) {
       return res
         .status(400)
         .json({ message: 'name, phoneNumber and password are required' });
     }
-
     const phoneExists = await User.findOne({ phoneNumber }).lean();
     if (phoneExists) {
       return res
         .status(400)
         .json({ message: 'User with this phone number already exists' });
     }
-
     if (email) {
       const emailExists = await User.findOne({ email }).lean();
       if (emailExists) {
@@ -35,20 +30,16 @@ export const registerUser = async (req, res) => {
           .json({ message: 'User with this email already exists' });
       }
     }
-
     const userData = {
       name,
       phoneNumber,
       password: password,
       role: 'patient',
     };
-
     if (email) {
       userData.email = email;
     }
-
     const user = await User.create(userData);
-
     await Patient.create({
       userId: user._id,
       age: null,
@@ -75,7 +66,6 @@ export const registerUser = async (req, res) => {
       .json({ message: 'Registration failed', error: err.message });
   }
 };
-
 // /////////////// Generate OTP with cerdentials ///////////////
 export const otpByCredentials = async (req, res) => {
   try {
@@ -102,7 +92,6 @@ export const otpByCredentials = async (req, res) => {
         .status(400)
         .json({ message: 'Invalid phone number or password' });
     }
-
     const otpCode = Math.floor(1000 + Math.random() * 9000);
     const otpCodeStr = otpCode.toString();
     const codeHash = await bcrypt.hash(otpCodeStr, 10);
@@ -111,14 +100,12 @@ export const otpByCredentials = async (req, res) => {
       codeHash,
       type: 'Sign in',
     });
-
     // await SmsService.sendOTP({
     //   to: phoneNumber,
     //   code: otpCodeStr,
     //   minutesValid: 5,
     // });
     console.log(otpCodeStr);
-
     return res.status(200).json({
       message: 'OTP sent successfully',
       otpId: otpDoc._id,
@@ -151,14 +138,13 @@ export const findWithOTP = async (req, res) => {
     const user = await User.findOne({
       phoneNumber: otpDoc.phoneNumber,
     }).select('-password');
+    const previousSignIn = user.lastSignIn;
     if (!user) {
       return res.status(400).json({ message: 'User Not Found' });
     }
-    // مثال: لو حاب تضيف lastSignIn في السكيمة مستقبلاً
-    // user.lastSignIn = new Date();
+    user.lastSignIn = new Date();
     await user.save();
     await OTP.findByIdAndDelete(otpId);
-
     // const lastToken = user.tokens[user.tokens.length - 1]?.token;
     const token = await user.generateAuthToken();
     return res.json({
@@ -169,6 +155,8 @@ export const findWithOTP = async (req, res) => {
         name: user.name,
         phoneNumber: user.phoneNumber,
         role: user.role,
+        lastSignIn: previousSignIn,
+        currentSignIn: user.lastSignIn,
         // tokens: user.tokens[0].token,
       },
     });
@@ -177,11 +165,9 @@ export const findWithOTP = async (req, res) => {
     return res.status(500).json({ message: 'Server error' });
   }
 };
-
 export const otpByPhone = async (req, res) => {
   try {
     const { phoneNumber, type } = req.body;
-
     if (!type) {
       return res.status(400).json({ message: 'OTP type is required' });
     }
@@ -197,20 +183,17 @@ export const otpByPhone = async (req, res) => {
     }
     const otpCodeStr = Math.floor(1000 + Math.random() * 9000).toString();
     const codeHash = await bcrypt.hash(otpCodeStr, 10);
-
     const newOtp = await OTP.create({
       phoneNumber,
       codeHash,
       type,
     });
-
     // await SmsService.sendOTP({
     //   to: phoneNumber,
     //   code: otpCodeStr,
     //   minutesValid: 5,
     // });
     console.log(otpCodeStr);
-
     return res.status(200).json({
       message: 'OTP sent successfully',
       otpId: newOtp._id,
@@ -221,38 +204,29 @@ export const otpByPhone = async (req, res) => {
     return res.status(500).json({ message: 'Server error', error });
   }
 };
-
 export const verifyOtp = async (req, res) => {
   try {
     const { otpId, otp } = req.body;
-
     if (!otpId || !otp) {
       return res.status(400).json({ message: 'otpId and otp are required' });
     }
-
     const otpDoc = await OTP.findById(otpId);
     if (!otpDoc) {
       return res
         .status(400)
         .json({ message: 'OTP is expired or already used' });
     }
-
     const isValidOtp = await bcrypt.compare(otp.toString(), otpDoc.codeHash);
     if (!isValidOtp) {
       return res.status(400).json({ message: 'Invalid OTP' });
     }
-
     const { phoneNumber, type } = otpDoc;
-
     if (type === 'Password recovery') {
       const user = await User.findOne({ phoneNumber });
-
       if (!user) {
         return res.status(400).json({ message: 'User Not Found' });
       }
-
       await OTP.findByIdAndDelete(otpId);
-
       return res.status(200).json({
         success: true,
         flow: 'password-recovery',
@@ -261,18 +235,14 @@ export const verifyOtp = async (req, res) => {
         phoneNumber,
       });
     }
-
     if (type === 'Verify Sign Up') {
       const existingUser = await User.findOne({ phoneNumber });
-
       if (existingUser) {
         return res
           .status(400)
           .json({ message: 'User already exists with this phone number' });
       }
-
       await OTP.findByIdAndDelete(otpId);
-
       return res.status(200).json({
         success: true,
         flow: 'verify-signup',
@@ -280,7 +250,6 @@ export const verifyOtp = async (req, res) => {
         phoneNumber,
       });
     }
-
     await OTP.findByIdAndDelete(otpId);
     return res.status(400).json({ message: 'Invalid OTP type', type });
   } catch (err) {
@@ -288,18 +257,14 @@ export const verifyOtp = async (req, res) => {
     return res.status(500).json({ message: 'Server error' });
   }
 };
-
 export const getProfile = async (req, res) => {
   try {
     const id = currentUserId(req);
     if (!id) return res.status(401).json({ message: 'Unauthorized' });
-
     const user = await User.findById(id).select(' _id name phoneNumber role');
-
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
-
     res.status(200).json(user);
   } catch (err) {
     res
@@ -307,22 +272,17 @@ export const getProfile = async (req, res) => {
       .json({ message: 'Failed to fetch profile', error: err.message });
   }
 };
-
 export const modifyPassword = async (req, res) => {
   const { phoneNumber, newPassword } = req.body;
-
   try {
     // Find the user
     const user = await User.findOne({ phoneNumber });
-
     // Check if exists
-
     if (!user) {
       return res.status(400).json({ message: 'User Not Found' });
     }
     // Update the password
     user.password = newPassword;
-
     // Save the user (this triggers the `pre('save')` middleware to hash the password)
     await user.save();
     res.status(200).json({ message: 'Password Updated' });
@@ -330,24 +290,19 @@ export const modifyPassword = async (req, res) => {
     res.status(error.statusCode || 400).send({ message: error.message });
   }
 };
-
 export const resendOtpCode = async (req, res) => {};
-
 export const setPassword = async (req, res) => {
   try {
     const { token } = req.params;
     const { password } = req.body;
-
     if (!password) {
       return res.status(400).json({ message: 'Password is required' });
     }
-
     const user = await User.findOne({
       activationToken: token,
       activationTokenExpires: { $gt: Date.now() },
       mustSetPassword: true,
     });
-
     if (!user) {
       return res.status(400).json({
         message: 'Activation link is invalid or expired',
@@ -359,10 +314,8 @@ export const setPassword = async (req, res) => {
     user.mustSetPassword = false;
     user.activationToken = undefined;
     user.activationTokenExpires = undefined;
-
     await user.save();
     console.log('after    ' + password);
-
     res.json({
       message: 'Password set successfully. You can now login.',
     });

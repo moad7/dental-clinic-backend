@@ -1,8 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+dotenv.config();
 import mongoose from 'mongoose';
-
 import serviceRoutes from './src/routes/serviceRoutes.js';
 import authRoutes from './src/routes/authRoutes.js';
 import treatmentSessionRoutes from './src/routes/treatmentSessionRoutes.js';
@@ -15,13 +15,9 @@ import patientAdminRoutes from './src/routes/patientAdminRoutes.js';
 import secretaryRoutes from './src/routes/secretaryRoutes.js';
 import clinicRoutes from './src/routes/clinicRoutes.js';
 import doctorRoutes from './src/routes/doctorRoutes.js';
-
-dotenv.config();
-
 const app = express();
 app.use(cors());
 app.use(express.json());
-
 app.use('/api/auth', authRoutes);
 app.use('/api/clinic', clinicRoutes);
 app.use('/api/users', userRoutes);
@@ -34,9 +30,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/patients', patientRoutes);
 app.use('/api/admin/patients', patientAdminRoutes);
 app.use('/api/doctor', doctorRoutes);
-
 const PORT = process.env.PORT || 3000;
-
 (async () => {
   try {
     await mongoose.connect(process.env.MONGO_URI, {

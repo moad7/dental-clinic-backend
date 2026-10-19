@@ -2,7 +2,6 @@ import mongoose from 'mongoose';
 const { Schema, model } = mongoose;
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-
 /* ----------------------------------------------
    Doctor Profile
 ------------------------------------------------*/
@@ -40,12 +39,10 @@ const DoctorProfileSchema = new Schema(
           ],
           required: true,
         },
-
         isClosed: {
           type: Boolean,
           default: false,
         },
-
         start: {
           type: String,
           required: function () {
@@ -53,7 +50,6 @@ const DoctorProfileSchema = new Schema(
           },
           match: /^([01]\d|2[0-3]):([0-5]\d)$/,
         },
-
         end: {
           type: String,
           required: function () {
@@ -66,7 +62,6 @@ const DoctorProfileSchema = new Schema(
   },
   { _id: false },
 );
-
 /* ----------------------------------------------
    Secretary Profile
 ------------------------------------------------*/
@@ -79,7 +74,6 @@ const SecretaryProfileSchema = new Schema(
   },
   { _id: false },
 );
-
 /* ----------------------------------------------
    Main User Schema
 ------------------------------------------------*/
@@ -112,6 +106,7 @@ const UserSchema = new Schema(
       type: Boolean,
       default: false,
     },
+    lastSignIn: { type: Date },
     mustSetPassword: {
       type: Boolean,
       default: true,
@@ -137,50 +132,39 @@ const UserSchema = new Schema(
     toObject: { virtuals: true },
   },
 );
-
 UserSchema.methods.generateAuthToken = async function () {
   const user = this;
-
   // Generate a new token
   const token = jwt.sign({ _id: user._id.toString() }, process.env.JWT_SECRET, {
     expiresIn: '30d', // Token expiry time
   });
-
   // Limit tokens to 6 (FIFO behavior)
   user.tokens = [...user.tokens, { token }].slice(-6); // Keep the last 6 tokens only
-
   // Save the user with the updated tokens
   await user.save();
-
   return token;
 };
 UserSchema.pre('save', function (next) {
   if (this.role === 'doctor') {
     this.secretary = undefined;
-
     if (!this.doctor) {
       this.doctor = {};
     }
   }
-
   if (this.role === 'secretary') {
     this.doctor = undefined;
-
     if (!this.secretary || !this.secretary.workShift) {
       return next(
         new Error('Secretary workShift is required for secretary role.'),
       );
     }
   }
-
   if (this.role === 'patient') {
     this.doctor = undefined;
     this.secretary = undefined;
   }
-
   next();
 });
-
 UserSchema.pre('save', async function (next) {
   if (this.password && this.isModified('password')) {
     this.password = await bcrypt.hash(this.password, 10);
