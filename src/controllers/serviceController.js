@@ -179,14 +179,8 @@ export const updateServiceItem = async (req, res) => {
   }
 };
 // 🟢 DELETE /api/services/:groupId/items/:itemId
-// حذف خدمة من داخل مجموعة
 export const deleteServiceItem = async (req, res) => {
   const { groupId, itemId } = req.params;
-  if (req.user.role !== 'secretary') {
-    return res
-      .status(403)
-      .json({ message: 'Only secretaries can delete services' });
-  }
   try {
     const group = await Service.findById(groupId);
     if (!group)

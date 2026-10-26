@@ -10,7 +10,7 @@ import {
   deleteServiceItem,
 } from '../controllers/serviceController.js';
 import { uploadServiceImage } from '../middleware/uploadMiddleware.js';
-import { protect } from '../middleware/authMiddleware.js';
+import { authorize, protect } from '../middleware/authMiddleware.js';
 const router = express.Router();
 router.get('/', protect, getAllServiceGroups);
 router.post('/groups', protect, createServiceGroup);
@@ -28,5 +28,10 @@ router.put(
   uploadServiceImage.single('photo'),
   updateServiceItem,
 );
-router.delete('/:groupId/items/:itemId', protect, deleteServiceItem);
+router.delete(
+  '/:groupId/items/:itemId',
+  protect,
+  authorize('secretary'),
+  deleteServiceItem,
+);
 export default router;
