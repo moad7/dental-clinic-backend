@@ -32,8 +32,19 @@ const TreatmentSessionSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ['pending', 'confirmed', 'cancelled', 'completed', 'rejected'],
+      enum: [
+        'pending',
+        'confirmed',
+        'cancelled',
+        'completed',
+        'rejected',
+        'expired',
+      ],
       index: true,
+    },
+    expiredAt: {
+      type: Date,
+      default: null,
     },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,

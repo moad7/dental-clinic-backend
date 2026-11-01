@@ -2,7 +2,7 @@ import express from 'express';
 import {
   createAppointment,
   getAllAppointments,
-  secretaryAppointmentDecision,
+  appointmentDecision,
   updateAppointment,
   getTodayAppointments,
   getPatientAppointmentsCalendar,
@@ -27,8 +27,8 @@ router.get('/', protect, authorize('secretary', 'doctor'), getAllAppointments);
 router.patch(
   '/decision/:appointmentId',
   protect,
-  authorize('secretary'),
-  secretaryAppointmentDecision,
+  authorize('secretary', 'doctor'),
+  appointmentDecision,
 );
 router.get('/today', protect, authorize('secretary'), getTodayAppointments);
 router.get(

@@ -7,6 +7,7 @@ const SESSION_STATUSES = [
   'completed',
   'cancelled',
   'rejected',
+  'expired',
 ];
 const TREATMENT_STATUSES = [
   'in_progress',
@@ -20,6 +21,7 @@ export const PATIENT_CALENDAR_SESSION_STATUSES = [
   'cancelled',
   'completed',
   'rejected',
+  'expired',
 ];
 const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 export const isValidTime = (time) => {
@@ -268,6 +270,7 @@ export const getTreatmentStatusFromSingleSession = (sessionStatus) => {
     completed: 'completed',
     cancelled: 'cancelled',
     rejected: 'rejected',
+    expired: 'cancelled',
   };
   return statusMap[sessionStatus] || 'in_progress';
 };
@@ -292,6 +295,7 @@ export const calculateTreatmentStatusFromSessions = ({
   const allCompleted = statuses.every((status) => status === 'completed');
   const allCancelled = statuses.every((status) => status === 'cancelled');
   const allRejected = statuses.every((status) => status === 'rejected');
+  const allExpired = statuses.every((status) => status === 'expired');
   if (hasAllExpectedSessions && allCompleted) {
     return 'completed';
   }
@@ -300,6 +304,9 @@ export const calculateTreatmentStatusFromSessions = ({
   }
   if (hasAllExpectedSessions && allRejected) {
     return 'rejected';
+  }
+  if (hasAllExpectedSessions && allExpired) {
+    return 'cancelled';
   }
   /*
     أي خليط آخر مثل:

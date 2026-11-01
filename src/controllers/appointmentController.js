@@ -445,6 +445,11 @@ export const updateAppointment = async (req, res) => {
         }
       }
       appointment.status = sessionStatus;
+      if (sessionStatus === 'expired') {
+        appointment.expiredAt = appointment.expiredAt || new Date();
+      } else {
+        appointment.expiredAt = null;
+      }
       if (typeof note === 'string') {
         appointment.note = note.trim();
       }
@@ -552,36 +557,44 @@ const calculateTreatmentStatus = ({ sessions, totalSessions }) => {
   }
   return 'in_progress';
 };
-export const secretaryAppointmentDecision = async (req, res) => {
+export const appointmentDecision = async (req, res) => {
+  const { appointmentId } = req.params;
+  const { decision, note } = req.body;
+  const userId = req.user.userId;
+  const userRole = req.user.role;
+  // --------------------------------------
+  // Validate appointment ID
+  // --------------------------------------
+  if (!mongoose.Types.ObjectId.isValid(appointmentId)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid appointment id',
+    });
+  }
+  // --------------------------------------
+  // Validate role and decision
+  // --------------------------------------
+  const allowedDecisions = {
+    secretary: ['approve', 'rejected'],
+    doctor: ['completed', 'rejected', 'update_note'],
+  };
+  if (
+    !allowedDecisions[userRole] ||
+    !allowedDecisions[userRole].includes(decision)
+  ) {
+    return res.status(403).json({
+      success: false,
+      message: 'You are not allowed to perform this decision',
+    });
+  }
   const mongoSession = await mongoose.startSession();
   try {
-    const { appointmentId } = req.params;
-    const { decision } = req.body;
-    /* ------------------------------------------
-       Validate appointment id
-    -------------------------------------------*/
-    if (!mongoose.Types.ObjectId.isValid(appointmentId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid appointment id',
-      });
-    }
-    /* ------------------------------------------
-       Validate decision
-    -------------------------------------------*/
-    const allowedDecisions = ['approve', 'reject'];
-    if (!decision || !allowedDecisions.includes(decision)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Decision must be approve or reject',
-      });
-    }
     let updatedSession;
     let updatedTreatment;
     await mongoSession.withTransaction(async () => {
-      /* --------------------------------------
-           Find TreatmentSession
-        ---------------------------------------*/
+      // --------------------------------------
+      // Find appointment
+      // --------------------------------------
       const appointment =
         await TreatmentSession.findById(appointmentId).session(mongoSession);
       if (!appointment) {
@@ -589,19 +602,9 @@ export const secretaryAppointmentDecision = async (req, res) => {
         error.statusCode = 404;
         throw error;
       }
-      /* --------------------------------------
-           Only pending can be approved/rejected
-        ---------------------------------------*/
-      if (appointment.status !== 'pending') {
-        const error = new Error(
-          `Appointment cannot be processed because its current status is "${appointment.status}"`,
-        );
-        error.statusCode = 400;
-        throw error;
-      }
-      /* --------------------------------------
-           Find Treatment
-        ---------------------------------------*/
+      // --------------------------------------
+      // Find treatment
+      // --------------------------------------
       const treatment = await Treatment.findById(
         appointment.treatmentId,
       ).session(mongoSession);
@@ -610,59 +613,144 @@ export const secretaryAppointmentDecision = async (req, res) => {
         error.statusCode = 404;
         throw error;
       }
-      /* ======================================
-           APPROVE
-        =======================================*/
-      if (decision === 'approve') {
-        appointment.status = 'confirmed';
-        const doctor = await User.findOne({
-          _id: appointment.doctorId,
-          role: 'doctor',
-          isActive: true,
-          'doctor.services.groupId': treatment.serviceGroupId,
-        })
-          .select('_id')
-          .session(mongoSession);
-        if (!doctor) {
+      // ======================================
+      // SECRETARY
+      // ======================================
+      if (userRole === 'secretary') {
+        if (appointment.status !== 'pending') {
           const error = new Error(
-            'Doctor is unavailable or does not provide this treatment service',
+            'Only pending appointments can be approved or rejected',
           );
           error.statusCode = 400;
           throw error;
         }
-        const conflict = await TreatmentSession.findOne({
-          _id: {
-            $ne: appointment._id,
-          },
-          doctorId: appointment.doctorId,
-          date: appointment.date,
-          time: appointment.time,
-          status: {
-            $in: ['pending', 'confirmed'],
-          },
-        })
-          .select('_id')
-          .session(mongoSession);
-        if (conflict) {
-          const error = new Error(
-            'Doctor already has another appointment at this date and time',
-          );
-          error.statusCode = 409;
-          throw error;
+        if (decision === 'approve') {
+          const doctor = await User.findOne({
+            _id: appointment.doctorId,
+            role: 'doctor',
+            isActive: true,
+            'doctor.services.groupId': treatment.serviceGroupId,
+          })
+            .select('_id')
+            .session(mongoSession);
+          if (!doctor) {
+            const error = new Error(
+              'Doctor is unavailable or does not provide this treatment service',
+            );
+            error.statusCode = 400;
+            throw error;
+          }
+          const conflict = await TreatmentSession.findOne({
+            _id: { $ne: appointment._id },
+            doctorId: appointment.doctorId,
+            date: appointment.date,
+            time: appointment.time,
+            status: { $in: ['pending', 'confirmed'] },
+          })
+            .select('_id')
+            .session(mongoSession);
+          if (conflict) {
+            const error = new Error(
+              'Doctor already has another appointment at this date and time',
+            );
+            error.statusCode = 409;
+            throw error;
+          }
+          appointment.status = 'confirmed';
+        }
+        if (decision === 'reject') {
+          appointment.status = 'rejected';
         }
       }
-      /* ======================================
-           REJECT
-        =======================================*/
-      if (decision === 'reject') {
-        appointment.status = 'rejected';
+      // ======================================
+      // DOCTOR
+      // ======================================
+      if (userRole === 'doctor') {
+        if (appointment.doctorId.toString() !== userId.toString()) {
+          const error = new Error('You can only update your own appointments');
+          error.statusCode = 403;
+          throw error;
+        }
+        // ----------------------------------
+        // COMPLETE وفحص الوقت لبين أن الموعد قد تم بالفعل
+        // ----------------------------------
+        if (decision === 'completed') {
+          if (appointment.status !== 'confirmed') {
+            const error = new Error(
+              'Only confirmed appointments can be completed',
+            );
+            error.statusCode = 400;
+            throw error;
+          }
+          const appointmentDateTime = new Date(appointment.date);
+          const [hours, minutes] = appointment.time.split(':').map(Number);
+          if (
+            !Number.isInteger(hours) ||
+            !Number.isInteger(minutes) ||
+            hours < 0 ||
+            hours > 23 ||
+            minutes < 0 ||
+            minutes > 59
+          ) {
+            const error = new Error('Invalid appointment time');
+            error.statusCode = 400;
+            throw error;
+          }
+          appointmentDateTime.setUTCHours(hours, minutes, 0, 0);
+          if (appointmentDateTime > new Date()) {
+            const error = new Error(
+              'Cannot complete an appointment before its scheduled time',
+            );
+            error.statusCode = 400;
+            throw error;
+          }
+          appointment.status = 'completed';
+        }
+        if (appointment.doctorId.toString() !== userId.toString()) {
+          const error = new Error('You can only update your own appointments');
+          error.statusCode = 403;
+          throw error;
+        }
+        // تحديث الملاحظة فقط
+        if (decision === 'update_note') {
+          if (typeof note !== 'string' || !note.trim()) {
+            const error = new Error('Note is required');
+            error.statusCode = 400;
+            throw error;
+          }
+          appointment.note = note.trim();
+        }
+        // ----------------------------------
+        // REJECT
+        // ----------------------------------
+        if (decision === 'rejected') {
+          if (!['pending', 'confirmed'].includes(appointment.status)) {
+            const error = new Error(
+              'Only pending or confirmed appointments can be rejected',
+            );
+            error.statusCode = 400;
+            throw error;
+          }
+          appointment.status = 'rejected';
+        }
+        if (note !== undefined) {
+          if (typeof note !== 'string') {
+            const error = new Error('Note must be a string');
+            error.statusCode = 400;
+            throw error;
+          }
+          appointment.note = note.trim();
+        }
       }
+      // --------------------------------------
+      // Save appointment
+      // --------------------------------------
       await appointment.save({
         session: mongoSession,
       });
-      /* --------------------------------------
-           Recalculate Treatment.status
-        ---------------------------------------*/
+      // --------------------------------------
+      // Recalculate treatment status
+      // --------------------------------------
       const allSessions = await TreatmentSession.find({
         treatmentId: treatment._id,
       })
@@ -675,25 +763,31 @@ export const secretaryAppointmentDecision = async (req, res) => {
       });
       treatment.status = treatmentStatus;
       if (treatmentStatus === 'completed') {
-        if (!treatment.completedAt) {
-          treatment.completedAt = new Date();
-        }
+        treatment.completedAt = treatment.completedAt || new Date();
       } else {
         treatment.completedAt = null;
       }
       await treatment.save({
         session: mongoSession,
       });
+      updatedSession = appointment;
+      updatedTreatment = treatment;
     });
     return res.status(200).json({
       success: true,
       message:
         decision === 'approve'
           ? 'Appointment approved successfully'
-          : 'Appointment rejected successfully',
+          : decision === 'completed'
+            ? 'Appointment completed successfully'
+            : decision === 'update_note'
+              ? 'Appointment note updated successfully'
+              : 'Appointment rejected successfully',
+      appointment: updatedSession,
+      treatment: updatedTreatment,
     });
   } catch (error) {
-    console.error('secretaryAppointmentDecision error:', error);
+    console.error('appointmentDecision error:', error);
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || 'Failed to process appointment',
