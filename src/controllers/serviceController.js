@@ -1,15 +1,43 @@
 // src/controllers/serviceController.js
+import mongoose from 'mongoose';
 import Service from '../../models/Service.js';
+import Treatment from '../../models/Treatment.js';
+import TreatmentSession from '../../models/TreatmentSession.js';
 import { uploadBufferToCloudinary } from '../utils/cloudinaryUpload.js';
 // GET /api/services
 export const getAllServiceGroups = async (req, res) => {
   try {
-    const groups = await Service.find({}).sort({ createdAt: -1 }).lean();
-    res.status(200).json(groups);
-  } catch (err) {
-    res
-      .status(500)
-      .json({ message: 'Failed to fetch services', error: err.message });
+    const { view = 'available' } = req.query;
+    if (!['all', 'available'].includes(view)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid services view',
+      });
+    }
+    const groups = await Service.find(
+      view === 'all' ? {} : { isArchived: { $ne: true } },
+    )
+      .sort({ createdAt: -1 })
+      .lean();
+    if (view === 'all') {
+      return res.status(200).json(groups);
+    }
+    const availableGroups = groups
+      .map((group) => ({
+        ...group,
+        services: (group.services || []).filter(
+          (item) => item.active === true && item.isArchived !== true,
+        ),
+      }))
+      .filter((group) => group.services.length > 0);
+    return res.status(200).json(availableGroups);
+  } catch (error) {
+    console.error('getAllServiceGroups error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch services',
+      error: error.message,
+    });
   }
 };
 // 🟢 POST /api/services/groups
@@ -64,11 +92,6 @@ export const updateServiceGroup = async (req, res) => {
 // 🟢 DELETE /api/services/:groupId
 export const deleteServiceGroup = async (req, res) => {
   const { groupId } = req.params;
-  if (req.user.role !== 'secretary') {
-    return res
-      .status(403)
-      .json({ message: 'Only secretaries can delete service groups' });
-  }
   try {
     const deleted = await Service.findByIdAndDelete(groupId);
     if (!deleted)
@@ -84,11 +107,6 @@ export const deleteServiceGroup = async (req, res) => {
 export const addServiceItem = async (req, res) => {
   const { groupId } = req.params;
   const { name, description, price, durationMin, active, imageUrl } = req.body;
-  if (req.user.role !== 'secretary') {
-    return res.status(403).json({
-      message: 'Only secretaries can add services',
-    });
-  }
   if (!name?.trim()) {
     return res.status(400).json({
       message: 'name is required',
@@ -147,6 +165,13 @@ export const updateServiceItem = async (req, res) => {
         message: 'Service item not found',
       });
     }
+    if (item.isArchived && (active === true || active === 'true')) {
+      return res.status(409).json({
+        success: false,
+        code: 'SERVICE_ARCHIVED',
+        message: 'Cannot activate an archived service',
+      });
+    }
     if (name !== undefined) {
       item.name = name.trim();
     }
@@ -181,21 +206,224 @@ export const updateServiceItem = async (req, res) => {
 // 🟢 DELETE /api/services/:groupId/items/:itemId
 export const deleteServiceItem = async (req, res) => {
   const { groupId, itemId } = req.params;
+  if (!mongoose.isValidObjectId(groupId) || !mongoose.isValidObjectId(itemId)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid service group or item id',
+    });
+  }
   try {
     const group = await Service.findById(groupId);
-    if (!group)
-      return res.status(404).json({ message: 'Service group not found' });
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        message: 'Service group not found',
+      });
+    }
     const item = group.services.id(itemId);
-    if (!item)
-      return res.status(404).json({ message: 'Service item not found' });
+    if (!item) {
+      return res.status(404).json({
+        success: false,
+        message: 'Service item not found',
+      });
+    }
+    const usedInTreatment = await Treatment.exists({
+      serviceGroupId: group._id,
+      serviceItemId: item._id,
+    });
+    if (usedInTreatment) {
+      return res.status(409).json({
+        success: false,
+        code: 'SERVICE_IN_USE',
+        message:
+          'Cannot delete this service because it is linked to existing treatments',
+      });
+    }
     item.deleteOne();
     await group.save();
-    res
-      .status(200)
-      .json({ message: 'Service item deleted successfully', group });
-  } catch (err) {
-    res
-      .status(500)
-      .json({ message: 'Failed to delete service item', error: err.message });
+    return res.status(200).json({
+      success: true,
+      message: 'Service item deleted successfully',
+      group,
+    });
+  } catch (error) {
+    console.error('deleteServiceItem error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete service item',
+      error: error.message,
+    });
+  }
+};
+// PATCH /api/services/:groupId/items/:itemId/archive
+export const archiveServiceItem = async (req, res) => {
+  const { groupId, itemId } = req.params;
+  if (!mongoose.isValidObjectId(groupId) || !mongoose.isValidObjectId(itemId)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid service group or item id',
+    });
+  }
+  try {
+    const group = await Service.findById(groupId);
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        message: 'Service group not found',
+      });
+    }
+    const item = group.services.id(itemId);
+    if (!item) {
+      return res.status(404).json({
+        success: false,
+        message: 'Service item not found',
+      });
+    }
+    if (item.isArchived) {
+      return res.status(409).json({
+        success: false,
+        code: 'SERVICE_ALREADY_ARCHIVED',
+        message: 'Service is already archived',
+      });
+    }
+    item.active = false;
+    item.isArchived = true;
+    item.archivedAt = new Date();
+    await group.save();
+    return res.status(200).json({
+      success: true,
+      message: 'Service archived successfully',
+      group,
+    });
+  } catch (error) {
+    console.error('archiveServiceItem error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to archive service',
+      error: error.message,
+    });
+  }
+};
+// PATCH /api/services/:groupId/items/:itemId/restore
+export const restoreServiceItem = async (req, res) => {
+  const { groupId, itemId } = req.params;
+  if (!mongoose.isValidObjectId(groupId) || !mongoose.isValidObjectId(itemId)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid service group or item id',
+    });
+  }
+  try {
+    const group = await Service.findById(groupId);
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        message: 'Service group not found',
+      });
+    }
+    const item = group.services.id(itemId);
+    if (!item) {
+      return res.status(404).json({
+        success: false,
+        message: 'Service item not found',
+      });
+    }
+    if (!item.isArchived) {
+      return res.status(409).json({
+        success: false,
+        code: 'SERVICE_NOT_ARCHIVED',
+        message: 'Service is not archived',
+      });
+    }
+    item.active = true;
+    item.isArchived = false;
+    item.archivedAt = null;
+    await group.save();
+    return res.status(200).json({
+      success: true,
+      message: 'Service restored successfully',
+      group,
+    });
+  } catch (error) {
+    console.error('restoreServiceItem error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to restore service',
+      error: error.message,
+    });
+  }
+};
+export const getServiceArchivePreview = async (req, res) => {
+  const { groupId, itemId } = req.params;
+  if (!mongoose.isValidObjectId(groupId) || !mongoose.isValidObjectId(itemId)) {
+    return res.status(400).json({
+      message: 'Invalid service group or item id',
+    });
+  }
+  try {
+    const group = await Service.findById(groupId).lean();
+    if (!group) {
+      return res.status(404).json({
+        message: 'Service group not found',
+      });
+    }
+    const item = group.services.find(
+      (service) => String(service._id) === String(itemId),
+    );
+    if (!item) {
+      return res.status(404).json({
+        message: 'Service item not found',
+      });
+    }
+    const treatments = await Treatment.find({
+      serviceGroupId: group._id,
+      serviceItemId: item._id,
+    })
+      .select('_id status totalSessions createdAt')
+      .sort({ createdAt: -1 })
+      .lean();
+    const stats = {
+      totalTreatments: treatments.length,
+      inProgress: 0,
+      completed: 0,
+      cancelled: 0,
+      rejected: 0,
+      futureAppointments: 0,
+    };
+    for (const treatment of treatments) {
+      if (treatment.status === 'in_progress') stats.inProgress++;
+      if (treatment.status === 'completed') stats.completed++;
+      if (treatment.status === 'cancelled') stats.cancelled++;
+      if (treatment.status === 'rejected') stats.rejected++;
+    }
+    const treatmentIds = treatments.map((t) => t._id);
+    if (treatmentIds.length > 0) {
+      // Dates in TreatmentSession are stored as UTC date-only.
+      const now = new Date();
+      const todayUTC = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+      );
+      stats.futureAppointments = await TreatmentSession.countDocuments({
+        treatmentId: { $in: treatmentIds },
+        date: { $gte: todayUTC },
+        status: { $in: ['pending', 'confirmed'] },
+      });
+    }
+    return res.status(200).json({
+      service: {
+        _id: item._id,
+        name: item.name,
+        active: item.active,
+        isArchived: item.isArchived,
+      },
+      stats,
+      treatments,
+    });
+  } catch (error) {
+    console.error('getServiceArchivePreview:', error);
+    return res.status(500).json({
+      message: 'Failed to fetch archive preview',
+      error: error.message,
+    });
   }
 };

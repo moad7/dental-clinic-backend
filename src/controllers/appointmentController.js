@@ -31,7 +31,6 @@ import {
 } from '../utils/appointmentAvailability.js';
 import { getWeekdayName } from '../utils/fuctions.js';
 import Service from '../../models/Service.js';
-// GET /api/appointments/
 export const createAppointment = async (req, res) => {
   try {
     const {
@@ -123,8 +122,8 @@ export const createAppointment = async (req, res) => {
       });
     }
     /* =========================
-       SERVICE
-    ========================= */
+   SERVICE
+========================= */
     const { serviceGroup, serviceItem } = await getServiceItem(
       serviceGroupId,
       serviceItemId,
@@ -139,6 +138,33 @@ export const createAppointment = async (req, res) => {
         message: 'Service item not found in selected service group',
       });
     }
+    /* =========================
+   ARCHIVE VALIDATION
+========================= */
+    if (serviceGroup.isArchived === true) {
+      return res.status(409).json({
+        success: false,
+        code: 'SERVICE_GROUP_ARCHIVED',
+        message: 'This service group is archived and unavailable for booking',
+      });
+    }
+    if (serviceItem.isArchived === true) {
+      return res.status(409).json({
+        success: false,
+        code: 'SERVICE_ARCHIVED',
+        message: 'This service is archived and unavailable for booking',
+      });
+    }
+    if (serviceItem.active !== true) {
+      return res.status(409).json({
+        success: false,
+        code: 'SERVICE_INACTIVE',
+        message: 'This service is inactive and unavailable for booking',
+      });
+    }
+    /* =========================
+   SERVICE DURATION
+========================= */
     const durationMin = Number(serviceItem.durationMin);
     if (!Number.isFinite(durationMin) || durationMin <= 0) {
       return res.status(400).json({
@@ -525,6 +551,94 @@ export const updateAppointment = async (req, res) => {
     await mongoSession.endSession();
   }
 };
+export const deleteAppointment = async (req, res) => {
+  const { appointmentId } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(appointmentId)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid appointment id',
+    });
+  }
+  const mongoSession = await mongoose.startSession();
+  try {
+    let deletedAppointment = null;
+    let updatedTreatment = null;
+    let treatmentDeleted = false;
+    await mongoSession.withTransaction(async () => {
+      const appointment =
+        await TreatmentSession.findById(appointmentId).session(mongoSession);
+      if (!appointment) {
+        throw new AppointmentError('Appointment not found', 404);
+      }
+      const treatment = await Treatment.findById(
+        appointment.treatmentId,
+      ).session(mongoSession);
+      if (!treatment) {
+        throw new AppointmentError('Treatment not found', 404);
+      }
+      deletedAppointment = appointment.toObject();
+      await TreatmentSession.deleteOne(
+        { _id: appointment._id },
+        { session: mongoSession },
+      );
+      const remainingSessions = await TreatmentSession.find({
+        treatmentId: treatment._id,
+      })
+        .select('_id status')
+        .session(mongoSession)
+        .lean();
+      if (remainingSessions.length === 0) {
+        await Treatment.deleteOne(
+          { _id: treatment._id },
+          { session: mongoSession },
+        );
+        treatmentDeleted = true;
+        return;
+      }
+      treatment.totalSessions = Math.max(
+        1,
+        Number(treatment.totalSessions) - 1,
+      );
+      const calculatedStatus = calculateTreatmentStatusFromSessions({
+        sessions: remainingSessions,
+        totalSessions: treatment.totalSessions,
+      });
+      const oldTreatmentStatus = treatment.status;
+      treatment.status = calculatedStatus;
+      if (calculatedStatus === 'completed') {
+        if (oldTreatmentStatus !== 'completed' || !treatment.completedAt) {
+          treatment.completedAt = new Date();
+        }
+      } else {
+        treatment.completedAt = null;
+      }
+      await treatment.save({ session: mongoSession });
+      updatedTreatment = treatment.toObject();
+    });
+    return res.status(200).json({
+      success: true,
+      message: 'Appointment deleted successfully',
+      deletedAppointmentId: appointmentId,
+      treatmentDeleted,
+      treatment: updatedTreatment,
+    });
+  } catch (error) {
+    console.error('deleteAppointment error:', error);
+    if (error instanceof AppointmentError) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message,
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete appointment',
+      error: error.message,
+    });
+  } finally {
+    await mongoSession.endSession();
+  }
+};
 const calculateTreatmentStatus = ({ sessions, totalSessions }) => {
   if (totalSessions === 1) {
     const status = sessions[0]?.status;
@@ -882,7 +996,6 @@ export const getTodayAppointments = async (req, res) => {
     });
   }
 };
-// GET /api/appointments/patient/calendar
 export const getPatientAppointmentsCalendar = async (req, res) => {
   try {
     const patientId = req.user.userId;

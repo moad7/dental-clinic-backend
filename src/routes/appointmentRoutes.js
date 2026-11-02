@@ -7,6 +7,7 @@ import {
   getTodayAppointments,
   getPatientAppointmentsCalendar,
   getPatientTreatmentPlans,
+  deleteAppointment,
 } from '../controllers/appointmentController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 const router = express.Router();
@@ -23,6 +24,12 @@ router.get(
   getPatientAppointmentsCalendar,
 );
 router.patch('/updateAppointment/:appointmentId', protect, updateAppointment);
+router.delete(
+  '/:appointmentId',
+  protect,
+  authorize('secretary'),
+  deleteAppointment,
+);
 router.get('/', protect, authorize('secretary', 'doctor'), getAllAppointments);
 router.patch(
   '/decision/:appointmentId',

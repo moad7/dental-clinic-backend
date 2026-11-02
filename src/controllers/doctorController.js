@@ -342,17 +342,6 @@ export const getDoctorDashboard = async (req, res) => {
       })
       .sort({ date: -1, time: -1 })
       .lean();
-    console.log(
-      'PREVIOUS SESSIONS:',
-      previousSessions.map((session) => ({
-        sessionId: session._id,
-        doctorId: session.doctorId,
-        patientId: session.treatmentId?.userId?._id,
-        treatmentId: session.treatmentId?._id,
-        date: session.date,
-        status: session.status,
-      })),
-    );
     const allSessions = [...sessions, ...previousSessions];
     const groupIds = [
       ...new Set(
