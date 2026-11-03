@@ -4,6 +4,7 @@ import Service from '../../models/Service.js';
 import Treatment from '../../models/Treatment.js';
 import TreatmentSession from '../../models/TreatmentSession.js';
 import { uploadBufferToCloudinary } from '../utils/cloudinaryUpload.js';
+import User from '../../models/User.js';
 // GET /api/services
 export const getAllServiceGroups = async (req, res) => {
   try {
@@ -107,16 +108,24 @@ export const deleteServiceGroup = async (req, res) => {
 export const addServiceItem = async (req, res) => {
   const { groupId } = req.params;
   const { name, description, price, durationMin, active, imageUrl } = req.body;
-  if (!name?.trim()) {
-    return res.status(400).json({
-      message: 'name is required',
-    });
-  }
   try {
     const group = await Service.findById(groupId);
     if (!group) {
       return res.status(404).json({
         message: 'Service group not found',
+      });
+    }
+    const existingItem = group.services.find(
+      (item) => item.name.toLowerCase() === name.trim().toLowerCase(),
+    );
+    if (existingItem) {
+      return res.status(409).json({
+        message: 'Service item already exists',
+      });
+    }
+    if (durationMin < 5) {
+      return res.status(400).json({
+        message: 'Duration must be at least 5 minutes',
       });
     }
     let photo = '';
@@ -239,11 +248,49 @@ export const deleteServiceItem = async (req, res) => {
           'Cannot delete this service because it is linked to existing treatments',
       });
     }
+    const isLastService = group.services.length === 1;
+    if (isLastService) {
+      const groupUsedInTreatment = await Treatment.exists({
+        serviceGroupId: group._id,
+      });
+      if (groupUsedInTreatment) {
+        return res.status(409).json({
+          success: false,
+          code: 'SERVICE_GROUP_IN_USE',
+          message:
+            'Cannot delete this group because it is linked to existing treatments',
+        });
+      }
+      await User.updateMany(
+        {
+          role: 'doctor',
+          'doctor.services.groupId': group._id,
+        },
+        {
+          $pull: {
+            'doctor.services': {
+              groupId: group._id,
+            },
+          },
+        },
+      );
+      await Service.deleteOne({ _id: group._id });
+      return res.status(200).json({
+        success: true,
+        code: 'SERVICE_GROUP_DELETED',
+        message: 'Last service and its group deleted successfully',
+        deletedServiceId: item._id,
+        deletedGroupId: group._id,
+        groupDeleted: true,
+      });
+    }
     item.deleteOne();
     await group.save();
     return res.status(200).json({
       success: true,
+      code: 'SERVICE_ITEM_DELETED',
       message: 'Service item deleted successfully',
+      groupDeleted: false,
       group,
     });
   } catch (error) {
