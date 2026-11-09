@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import User from '../../models/User.js';
 import TreatmentSession from '../../models/TreatmentSession.js';
 import Treatment from '../../models/Treatment.js';
+import { DateTime } from 'luxon';
 import {
   AppointmentError,
   validateSessionStatus,
@@ -788,38 +789,57 @@ export const appointmentDecision = async (req, res) => {
         // ----------------------------------
         // COMPLETE وفحص الوقت لبين أن الموعد قد تم بالفعل
         // ----------------------------------
-        if (decision === 'completed') {
-          if (appointment.status !== 'confirmed') {
-            const error = new Error(
-              'Only confirmed appointments can be completed',
-            );
-            error.statusCode = 400;
-            throw error;
-          }
-          const appointmentDateTime = new Date(appointment.date);
-          const [hours, minutes] = appointment.time.split(':').map(Number);
-          if (
-            !Number.isInteger(hours) ||
-            !Number.isInteger(minutes) ||
-            hours < 0 ||
-            hours > 23 ||
-            minutes < 0 ||
-            minutes > 59
-          ) {
-            const error = new Error('Invalid appointment time');
-            error.statusCode = 400;
-            throw error;
-          }
-          appointmentDateTime.setUTCHours(hours, minutes, 0, 0);
-          if (appointmentDateTime > new Date()) {
-            const error = new Error(
-              'Cannot complete an appointment before its scheduled time',
-            );
-            error.statusCode = 400;
-            throw error;
-          }
-          appointment.status = 'completed';
-        }
+      
+if (decision === 'completed') {
+  if (appointment.status !== 'confirmed') {
+    const error = new Error(
+      'Only confirmed appointments can be completed',
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  // Validate appointment time
+  if (
+    typeof appointment.time !== 'string' ||
+    !/^([01]\d|2[0-3]):[0-5]\d$/.test(appointment.time)
+  ) {
+    const error = new Error('Invalid appointment time');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  // Extract date stored as UTC date-only
+  const date = DateTime.fromJSDate(appointment.date, {
+    zone: 'utc',
+  }).toFormat('yyyy-MM-dd');
+
+  // Interpret appointment time in Israel timezone
+  const appointmentDateTime = DateTime.fromISO(
+    `${date}T${appointment.time}`,
+    { zone: 'Asia/Jerusalem' },
+  );
+
+  if (!appointmentDateTime.isValid) {
+    const error = new Error('Invalid appointment date or time');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const now = DateTime.now().setZone('Asia/Jerusalem');
+
+  // Prevent completing appointments before their start time
+  if (appointmentDateTime.toMillis() > now.toMillis()) {
+    const error = new Error(
+      'Cannot complete an appointment before its scheduled time',
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  appointment.status = 'completed';
+}
+
         if (appointment.doctorId.toString() !== userId.toString()) {
           const error = new Error('You can only update your own appointments');
           error.statusCode = 403;

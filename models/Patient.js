@@ -8,8 +8,6 @@ const PatientSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-
-    city: { type: String },
     allergies: { type: String },
     notes: { type: String },
     createdBy: {
@@ -18,7 +16,7 @@ const PatientSchema = new mongoose.Schema(
       required: true,
     },
   },
-  { timestamps: true }, //createdAt and updatedAt
+  { timestamps: true }, 
 );
 
 export default mongoose.model('Patient', PatientSchema);

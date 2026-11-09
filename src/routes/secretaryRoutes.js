@@ -7,6 +7,7 @@ import {
 import {
   createDoctorBySecretary,
   createPatientBySecretary,
+  renewActivationLink,
   updateDoctorBySecretary,
 } from '../controllers/secretaryController.js';
 const router = express.Router();
@@ -27,5 +28,11 @@ router.post(
   protect,
   secretaryOnly,
   createPatientBySecretary,
+);
+router.patch(
+  '/:userId/renew-activation',
+  protect,
+  secretaryOnly,
+  renewActivationLink,
 );
 export default router;

@@ -251,7 +251,7 @@ export const getPatientFullProfile = async (req, res) => {
       role: 'patient',
     })
       .select(
-        'idNumber name email phoneNumber gender birth avatar role isActive mustSetPassword createdAt updatedAt',
+        'idNumber name email phoneNumber gender birth avatar role isActive mustSetPassword activationTokenExpires createdAt updatedAt',
       )
       .lean();
     if (!user) {

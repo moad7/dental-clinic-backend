@@ -15,6 +15,7 @@ export const createDoctorBySecretary = async (req, res) => {
       phoneNumber,
       email,
       gender,
+      city,
       birth,
       avatar,
       doctor: doctorData,
@@ -43,6 +44,7 @@ export const createDoctorBySecretary = async (req, res) => {
       phoneNumber,
       email,
       gender,
+      city,
       birth,
       avatar,
       role: 'doctor',
@@ -56,7 +58,7 @@ export const createDoctorBySecretary = async (req, res) => {
           : [],
         yearsOfExperience,
         bio,
-        clinic,
+        clinic:clinic,
         workingHours,
       },
     });
@@ -100,6 +102,7 @@ export const updateDoctorBySecretary = async (req, res) => {
       idNumber,
       phoneNumber,
       email,
+      city,
       birth,
       gender,
       isActive,
@@ -219,6 +222,7 @@ export const updateDoctorBySecretary = async (req, res) => {
     existingDoctor.email = normalizedEmail;
     existingDoctor.birth = birth || null;
     existingDoctor.gender = gender;
+    existingDoctor.city = city ;
     if (typeof isActive === 'boolean') {
       existingDoctor.isActive = isActive;
     }
@@ -318,6 +322,7 @@ export const createPatientBySecretary = async (req, res) => {
       phoneNumber,
       email,
       gender,
+      city,
       birth: birth ? new Date(birth) : undefined,
       role: 'patient',
       isActive: false,
@@ -328,7 +333,6 @@ export const createPatientBySecretary = async (req, res) => {
     const patient = await Patient.create({
       userId: user._id,
       createdBy: req.user.userId,
-      city,
       allergies,
       notes,
     });
@@ -344,6 +348,87 @@ export const createPatientBySecretary = async (req, res) => {
     return res.status(500).json({
       message: 'Failed to create patient',
       error: error.message,
+    });
+  }
+};
+
+export const renewActivationLink = async (req, res) => {
+  const { userId } = req.params;
+
+  try {
+
+    if (!mongoose.isValidObjectId(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID',
+      });
+    }
+
+    const user = await User.findOne({
+      _id: userId,
+      role: { $in: ['doctor', 'patient'] },
+    }).select(
+      '+password +activationToken +activationTokenExpires',
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    if (user.mustSetPassword !== true) {
+      return res.status(409).json({
+        success: false,
+        code: 'PASSWORD_ALREADY_SET',
+        message: 'User has already completed password setup',
+      });
+    }
+
+    if (user.password) {
+      return res.status(409).json({
+        success: false,
+        code: 'PASSWORD_ALREADY_EXISTS',
+        message:
+          'User already has a password. Use password reset instead',
+      });
+    }
+
+    const activationToken = crypto.randomBytes(32).toString('hex');
+
+    const activationTokenExpires = new Date(
+      Date.now() + 24 * 60 * 60 * 1000,
+    );
+
+    user.activationToken = activationToken;
+    user.activationTokenExpires = activationTokenExpires;
+
+    await user.save();
+
+    const setPasswordLink =
+      `${process.env.FRONTEND_URL}/set-password/${activationToken}`;
+
+    return res.status(200).json({
+      success: true,
+      message: 'Activation link renewed successfully',
+      user: {
+        _id: user._id,
+        name: user.name,
+        role: user.role,
+        phoneNumber: user.phoneNumber,
+        mustSetPassword: user.mustSetPassword,
+        isActive: user.isActive,
+      },
+      setPasswordLink,
+      activationTokenExpires,
+    });
+  } catch (error) {
+    console.error('renewActivationLink error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to renew activation link',
     });
   }
 };
