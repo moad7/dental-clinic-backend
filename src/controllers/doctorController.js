@@ -26,7 +26,6 @@ export const getAllDoctors = async (req, res) => {
         select: 'title services',
       })
       .sort({ createdAt: -1 });
-          console.log('getAllDoctors:', doctors);
 // //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     return res.status(200).json({
       count: doctors.length,

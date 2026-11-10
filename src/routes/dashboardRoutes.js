@@ -1,13 +1,12 @@
 import express from 'express';
 import {
-  getDashboardSummary,
-  getUpcomingAppointmentsForCalendar,
+  getDashboardStats,
 } from '../controllers/dashboardController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
+router.get('/stats', protect, getDashboardStats);
 
-router.get('/summary', protect, getDashboardSummary);
-router.get('/calendar', protect, getUpcomingAppointmentsForCalendar);
+
 
 export default router;

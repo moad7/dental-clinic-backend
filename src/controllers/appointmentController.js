@@ -932,11 +932,19 @@ if (decision === 'completed') {
 };
 export const getTodayAppointments = async (req, res) => {
   try {
-    const now = new Date();
-    const startOfToday = new Date(now);
-    startOfToday.setHours(0, 0, 0, 0);
-    const endOfToday = new Date(now);
-    endOfToday.setHours(23, 59, 59, 999);
+   const now = new Date();
+
+const todayIsrael = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Jerusalem',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+}).format(now);
+
+const startOfToday = new Date(`${todayIsrael}T00:00:00.000Z`);
+
+const endOfToday = new Date(startOfToday);
+endOfToday.setUTCDate(endOfToday.getUTCDate() + 1);
     const sessions = await TreatmentSession.find({
       date: {
         $gte: startOfToday,
@@ -1003,7 +1011,6 @@ export const getTodayAppointments = async (req, res) => {
     });
     return res.status(200).json({
       success: true,
-      date: startOfToday,
       count: appointments.length,
       appointments,
     });
