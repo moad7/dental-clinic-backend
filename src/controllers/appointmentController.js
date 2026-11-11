@@ -944,7 +944,7 @@ const todayIsrael = new Intl.DateTimeFormat('en-CA', {
 const startOfToday = new Date(`${todayIsrael}T00:00:00.000Z`);
 
 const endOfToday = new Date(startOfToday);
-endOfToday.setUTCDate(endOfToday.getUTCDate() + 1);
+endOfToday.setUTCDate(endOfToday.getUTCDate());
     const sessions = await TreatmentSession.find({
       date: {
         $gte: startOfToday,

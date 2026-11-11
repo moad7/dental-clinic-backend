@@ -3,18 +3,24 @@ import User from '../../models/User.js';
 import Patient from '../../models/Patient.js';
 import OTP from '../../models/Otp.js';
 import SmsService from '../services/smsService.js';
-import jwt from 'jsonwebtoken';
+
 function currentUserId(req) {
   return req.user?.userId || req.user?._id || req.user?.sub;
 }
 // POST /api/auth/register
 export const registerUser = async (req, res) => {
   try {
-    const { name, phoneNumber, password, email } = req.body;
-    if (!name || !phoneNumber || !password) {
+    const { name, phoneNumber, password,city, gender,birth, idNumber } = req.body;
+    if (!name || !phoneNumber || !password || !city || !gender || !birth || !idNumber) {
       return res
         .status(400)
-        .json({ message: 'name, phoneNumber and password are required' });
+        .json({ message: 'All inputs are required' });
+    }
+       const idNumberExists = await User.findOne({ idNumber }).lean();
+    if (idNumberExists) {
+      return res
+        .status(400)
+        .json({ message: 'User with this id number already exists' });
     }
     const phoneExists = await User.findOne({ phoneNumber }).lean();
     if (phoneExists) {
@@ -22,31 +28,27 @@ export const registerUser = async (req, res) => {
         .status(400)
         .json({ message: 'User with this phone number already exists' });
     }
-    if (email) {
-      const emailExists = await User.findOne({ email }).lean();
-      if (emailExists) {
-        return res
-          .status(400)
-          .json({ message: 'User with this email already exists' });
-      }
-    }
+    
     const userData = {
       name,
+      idNumber,
+      gender,
+      city,
+      birth,
       phoneNumber,
       password: password,
       role: 'patient',
+      isActive:'true',
+      mustSetPassword:'false'
     };
-    if (email) {
-      userData.email = email;
-    }
+ 
     const user = await User.create(userData);
     await Patient.create({
       userId: user._id,
-      age: null,
-      gender: undefined,
       allergies: '',
       notes: '',
       avatar: '',
+      createdBy: user._id,
     });
     const token = await user.generateAuthToken();
     res.status(201).json({
