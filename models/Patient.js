@@ -6,7 +6,8 @@ const PatientSchema = new mongoose.Schema(
       type: mongoose.Types.ObjectId,
       ref: 'User',
       required: true,
-      index: true,
+      unique: true,
+  
     },
     allergies: { type: String },
     notes: { type: String },

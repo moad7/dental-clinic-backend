@@ -328,7 +328,7 @@ export const getAllAppointments = async (req, res) => {
         populate: [
           {
             path: 'userId',
-            select: 'name phoneNumber',
+            select: 'idNumber name phoneNumber',
           },
           {
             path: 'serviceGroupId',
