@@ -35,4 +35,6 @@ router.patch(
   secretaryOnly,
   renewActivationLink,
 );
+
+
 export default router;

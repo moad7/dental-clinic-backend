@@ -2,18 +2,12 @@
 import express from 'express';
 import { authorize, protect } from '../middleware/authMiddleware.js';
 import {
-  getMyPatientProfile,
-  updateMyPatientProfile,
-  getMyAppointments,
-  getMyTreatments,
+  deletePatientAccount,
   getAllPatients,
   getPatientFullProfile,
 } from '../controllers/patientController.js';
 const router = express.Router();
-router.get('/me/profile', protect, getMyPatientProfile);
-router.put('/me/profile', protect, updateMyPatientProfile);
-router.get('/me/appointments', protect, getMyAppointments);
-router.get('/me/treatments', protect, getMyTreatments);
+
 router.get(
   '/getAllPatients',
   protect,
@@ -26,4 +20,22 @@ router.get(
   authorize('secretary', 'doctor'),
   getPatientFullProfile,
 );
+router.delete(
+  '/patients/me',
+  protect,
+  authorize('patient'),
+  deletePatientAccount,
+);
+
+router.delete(
+  '/patients/:userId',
+  protect,
+    authorize('secretary'),
+  deletePatientAccount,
+);
+
+
+
+
+
 export default router;

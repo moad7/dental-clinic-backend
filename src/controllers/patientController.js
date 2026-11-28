@@ -1,242 +1,9 @@
 // src/controllers/patientController.js
 import User from '../../models/User.js';
 import Patient from '../../models/Patient.js';
-import Appointment from '../../models/Appointment.js';
 import Treatment from '../../models/Treatment.js';
 import TreatmentSession from '../../models/TreatmentSession.js';
-import Service from '../../models/Service.js';
 import mongoose from 'mongoose';
-const currentUserId = (req) =>
-  req.user?.userId || req.user?._id || req.user?.sub;
-/**
- * GET /api/patients/me/profile
- * المريض يشوف بروفايله نفسه
- */
-export const getMyPatientProfile = async (req, res) => {
-  try {
-    const id = currentUserId(req);
-    const user = await User.findOne({ _id: id, role: 'patient' })
-      .select('name phoneNumber email role avatar')
-      .populate({
-        path: 'patient',
-        select: 'age gender allergies notes',
-        model: Patient,
-      })
-      .lean();
-    if (!user) {
-      return res.status(404).json({ message: 'Patient not found' });
-    }
-    user.id = user._id;
-    res.status(200).json(user);
-  } catch (err) {
-    res.status(500).json({
-      message: 'Failed to fetch patient profile',
-      error: err.message,
-    });
-  }
-};
-export const updateMyPatientProfile = async (req, res) => {
-  try {
-    const id = currentUserId(req);
-    if (req.user.role !== 'patient') {
-      return res
-        .status(403)
-        .json({ message: 'Only patients can update their profile' });
-    }
-    const { name, phoneNumber, email, avatar, age, gender, allergies, notes } =
-      req.body;
-    const user = await User.findOne({ _id: id, role: 'patient' });
-    if (!user) return res.status(404).json({ message: 'Patient not found' });
-    if (name !== undefined) user.name = name;
-    if (phoneNumber !== undefined) user.phoneNumber = phoneNumber;
-    if (email !== undefined) user.email = email;
-    if (avatar !== undefined) user.avatar = avatar;
-    await user.save();
-    let patient = await Patient.findOne({ userId: user._id });
-    if (!patient) {
-      patient = new Patient({ userId: user._id });
-    }
-    if (age !== undefined) patient.age = age;
-    if (gender !== undefined) patient.gender = gender;
-    if (allergies !== undefined) patient.allergies = allergies;
-    if (notes !== undefined) patient.notes = notes;
-    await patient.save();
-    res.status(200).json({ message: 'Profile updated successfully' });
-  } catch (err) {
-    res.status(500).json({
-      message: 'Failed to update patient profile',
-      error: err.message,
-    });
-  }
-};
-/**
- * GET /api/patients/me/appointments
- */
-export const getMyAppointments = async (req, res) => {
-  try {
-    const id = currentUserId(req);
-    const appointments = await Appointment.find({ userId: id })
-      .select('date time status note')
-      .sort({ date: 1, time: 1 })
-      .lean();
-    res.status(200).json(appointments);
-  } catch (err) {
-    res.status(500).json({
-      message: 'Failed to fetch my appointments',
-      error: err.message,
-    });
-  }
-};
-/**
- * GET /api/patients/me/treatments
- */
-export const getMyTreatments = async (req, res) => {
-  try {
-    const id = currentUserId(req);
-    const treatments = await Treatment.find({ userId: id })
-      .populate({ path: 'serviceId', select: 'title services', model: Service })
-      .sort({ createdAt: -1 })
-      .lean();
-    res.status(200).json(treatments);
-  } catch (err) {
-    res.status(500).json({
-      message: 'Failed to fetch my treatments',
-      error: err.message,
-    });
-  }
-};
-// export const getAllPatients = async (req, res) => {
-//   try {
-//     const patients = await Patient.find()
-//       .populate({
-//         path: 'userId',
-//         select: 'idNumber name email phoneNumber gender avatar role isActive',
-//       })
-//       .sort({ createdAt: -1 })
-//       .lean();
-//     const patientIds = patients.map((p) => p.userId?._id).filter(Boolean);
-//     const treatments = await Treatment.find({
-//       userId: { $in: patientIds },
-//     })
-//       .populate({
-//         path: 'serviceGroupId',
-//         select: 'title services',
-//       })
-//       .populate({
-//         path: 'createdBy',
-//         select: 'name role phoneNumber',
-//       })
-//       .populate({
-//         path: 'Sessions',
-//         populate: [
-//           {
-//             path: 'doctorId',
-//             select: 'name phoneNumber avatar',
-//           },
-//           {
-//             path: 'createdBy',
-//             select: 'name role phoneNumber',
-//           },
-//         ],
-//       })
-//       .lean();
-//     const treatmentsMap = {};
-//     treatments.forEach((treatment) => {
-//       const userId = treatment.userId.toString();
-//       if (!treatmentsMap[userId]) {
-//         treatmentsMap[userId] = [];
-//       }
-//       treatmentsMap[userId].push(treatment);
-//     });
-//     const result = patients.map((patient) => ({
-//       ...patient,
-//       treatments: treatmentsMap[patient.userId?._id?.toString()] || [],
-//     }));
-//     return res.status(200).json({
-//       count: result.length,
-//       patients: result,
-//     });
-//   } catch (error) {
-//     return res.status(500).json({
-//       message: 'Failed to fetch patients',
-//       error: error.message,
-//     });
-//   }
-// };
-// export const getAllPatients = async (req, res) => {
-//   try {
-//     const patients = await Patient.find()
-//       .populate({
-//         path: 'userId',
-//         select: 'idNumber name email phoneNumber gender avatar role isActive',
-//       })
-//       .sort({ createdAt: -1 })
-//       .lean();
-//     const patientIds = patients.map((p) => p.userId?._id).filter(Boolean);
-//     const treatments = await Treatment.find({
-//       userId: { $in: patientIds },
-//     })
-//       .populate({
-//         path: 'serviceGroupId',
-//         select: 'title services',
-//       })
-//       .populate({
-//         path: 'createdBy',
-//         select: 'name role phoneNumber',
-//       })
-//       .populate({
-//         path: 'Sessions',
-//         populate: [
-//           {
-//             path: 'doctorId',
-//             select: 'name phoneNumber avatar',
-//           },
-//           {
-//             path: 'createdBy',
-//             select: 'name role phoneNumber',
-//           },
-//         ],
-//       })
-//       .lean();
-//     const treatmentsMap = {};
-//     const lastVisitMap = {};
-//     treatments.forEach((treatment) => {
-//       const userId = treatment.userId.toString();
-//       // تجميع العلاجات حسب المريض
-//       if (!treatmentsMap[userId]) {
-//         treatmentsMap[userId] = [];
-//       }
-//       treatmentsMap[userId].push(treatment);
-//       // البحث عن آخر جلسة مكتملة
-//       for (const session of treatment.Sessions || []) {
-//         if (session.status !== 'completed') continue;
-//         if (!session.date) continue;
-//         const sessionDate = new Date(session.date);
-//         if (Number.isNaN(sessionDate.getTime())) continue;
-//         if (!lastVisitMap[userId] || sessionDate > lastVisitMap[userId]) {
-//           lastVisitMap[userId] = sessionDate;
-//         }
-//       }
-//     });
-//     const result = patients.map((patient) => {
-//       const userId = patient.userId?._id?.toString();
-//       return {
-//         ...patient,
-//         lastVisit: lastVisitMap[userId] || null,
-//         treatments: treatmentsMap[userId] || [],
-//       };
-//     });
-//     return res.status(200).json({
-//       count: result.length,
-//       patients: result,
-//     });
-//   } catch (error) {
-//     return res.status(500).json({
-//       message: 'Failed to fetch patients',
-//       error: error.message,
-//     });
-//   }
-// };
 
 export const getAllPatients = async (req, res) => {
   try {
@@ -602,3 +369,117 @@ export const getPatientFullProfile = async (req, res) => {
     });
   }
 };
+
+export const deletePatientAccount = async (req, res) => {
+  let session;
+  try {
+    const currentUserId = req.user?.userId;
+    const role = req.user?.role;
+    if (
+      role === 'patient' &&
+      req.params.userId &&
+      req.params.userId !== currentUserId.toString()
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only delete your own account',
+      });
+    }
+    const userId =
+      role === 'patient'
+        ? currentUserId
+        : req.params.userId;
+
+    if (!mongoose.isValidObjectId(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid patient ID',
+      });
+    }
+    session = await mongoose.startSession();
+    let deletedData;
+    await session.withTransaction(async () => {
+      const user = await User.findOne({
+        _id: userId,
+        role: 'patient',
+      })
+        .select('_id name')
+        .session(session)
+        .lean();
+
+      if (!user) {
+        const error = new Error('Patient not found');
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const treatments = await Treatment.find({
+        userId: user._id,
+      })
+        .select('_id')
+        .session(session)
+        .lean();
+
+      const treatmentIds = treatments.map(
+        (treatment) => treatment._id,
+      );
+
+      const deletedSessions = await TreatmentSession.deleteMany(
+        {
+          treatmentId: { $in: treatmentIds },
+        },
+        { session },
+      );
+
+      const deletedTreatments = await Treatment.deleteMany(
+        { userId: user._id },
+        { session },
+      );
+
+      const deletedPatient = await Patient.deleteOne(
+        { userId: user._id },
+        { session },
+      );
+
+      const deletedUser = await User.deleteOne(
+        {
+          _id: user._id,
+          role: 'patient',
+        },
+        { session },
+      );
+
+      if (deletedUser.deletedCount !== 1) {
+        throw new Error('Failed to delete patient account');
+      }
+      deletedData = {
+        userId: user._id,
+        name: user.name,
+        users: deletedUser.deletedCount,
+        patientProfiles: deletedPatient.deletedCount,
+        treatments: deletedTreatments.deletedCount,
+        sessions: deletedSessions.deletedCount,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Patient and all related data deleted successfully',
+      deletedData,
+    });
+  } catch (error) {
+    console.error('deletePatientAccount error:', error);
+
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.statusCode
+        ? error.message
+        : 'Failed to delete patient account',
+    });
+  } finally {
+    if (session) {
+      await session.endSession();
+    }
+  }
+};
+

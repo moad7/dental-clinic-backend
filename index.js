@@ -10,7 +10,6 @@ import treatmentRoutes from './src/routes/treatmentRoutes.js';
 import appointmentRoutes from './src/routes/appointmentRoutes.js';
 import dashboardRoutes from './src/routes/dashboardRoutes.js';
 import patientRoutes from './src/routes/patientRoutes.js';
-import patientAdminRoutes from './src/routes/patientAdminRoutes.js';
 import secretaryRoutes from './src/routes/secretaryRoutes.js';
 import clinicRoutes from './src/routes/clinicRoutes.js';
 import doctorRoutes from './src/routes/doctorRoutes.js';
@@ -27,7 +26,6 @@ app.use('/api/treatment', treatmentRoutes);
 app.use('/api/appointments', appointmentRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/patients', patientRoutes);
-app.use('/api/admin/patients', patientAdminRoutes);
 app.use('/api/doctor', doctorRoutes);
 const PORT = process.env.PORT || 3000;
 (async () => {
